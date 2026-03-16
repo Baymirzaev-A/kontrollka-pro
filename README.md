@@ -16,6 +16,10 @@
 - Идеален для небольших организаций (срок внедрения - 1 час) 
 - Не требует дополнительного обучения
 
+Открой браузер: http://localhost:5000
+Логин: admin
+Пароль: admin
+
 ## Скриншоты
 
 ### Главный экран
@@ -44,7 +48,7 @@
 
 ```bash
 # Клонируем
-git clone https://github.com/твой-логин/kontrollka-lite.git
+git clone https://github.com/Baymirzaev-A/kontrollka-lite.git
 cd kontrollka-lite
 
 # Устанавливаем зависимости
@@ -53,6 +57,3 @@ pip install -r requirements.txt
 # Запускаем
 python app.py
 
-Открой браузер: http://localhost:5000
-Логин: admin
-Пароль: admin
