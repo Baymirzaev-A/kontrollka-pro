@@ -6,15 +6,18 @@
 <div class="card">
     <div class="card-header">
         <h2>📜 Библиотека скриптов</h2>
-        <div>
+        <div style="display: flex; gap: 0.5rem;">
             <button class="btn btn-success" onclick="location.reload()">🔄 Обновить</button>
+            <button class="btn btn-info" onclick="document.getElementById('uploadFile').click()">📤 Загрузить .py</button>
+            <a href="/api/scripts/template/download" class="btn btn-warning">📥 Скачать шаблон</a>
+            <input type="file" id="uploadFile" style="display: none;" accept=".py" onchange="uploadScript(this)">
         </div>
     </div>
 
     <div style="margin-bottom: 1rem; padding: 1rem; background: #e9ecef; border-radius: 5px;">
         <p style="margin: 0; color: #495057;">
             Здесь отображаются все скрипты из папки <code>scripts/</code>.
-            Вы можете скачать любой скрипт в виде текстового файла.
+            Вы можете скачать любой скрипт или загрузить свой .py файл.
         </p>
     </div>
 
@@ -36,7 +39,7 @@
                 if (scripts.length === 0) {
                     container.innerHTML = `
                         <div class="alert alert-warning" style="text-align: center;">
-                            📭 Скрипты не найдены. Добавьте файлы .py в папку <code>scripts/</code>
+                            📭 Скрипты не найдены. Нажмите "Загрузить .py" чтобы добавить первый скрипт.
                         </div>
                     `;
                     return;
@@ -47,7 +50,7 @@
                 scripts.forEach(script => {
                     html += `
                         <div style="background: white; border: 1px solid #dee2e6; border-radius: 5px; padding: 1.5rem;">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div style="flex: 1;">
                                     <h3 style="margin: 0 0 0.5rem 0;">${script.name}</h3>
                                     <p style="color: #6c757d; margin: 0 0 0.5rem 0;">${script.description}</p>
@@ -57,10 +60,13 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div>
-                                    <a href="/api/scripts/${script.id}/download" class="btn btn-success" download>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <a href="/api/scripts/${script.id}/download" class="btn btn-success" style="white-space: nowrap;">
                                         📥 Скачать
                                     </a>
+                                    <button class="btn btn-danger" onclick="deleteScript('${script.id}', '${script.name}')" style="white-space: nowrap;">
+                                        🗑️
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -77,6 +83,64 @@
                     </div>
                 `;
             });
+    }
+
+    function uploadScript(input) {
+        if (input.files.length === 0) return;
+
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('script_file', file);
+
+        // Показываем загрузку
+        document.getElementById('scriptsList').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                ⏳ Загрузка файла ${file.name}...
+            </div>
+        `;
+
+        fetch('/api/scripts/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Скрипт успешно загружен!');
+                loadScripts();
+            } else {
+                alert('❌ Ошибка: ' + data.error);
+                loadScripts();
+            }
+        })
+        .catch(error => {
+            alert('❌ Ошибка соединения: ' + error);
+            loadScripts();
+        });
+
+        input.value = '';
+    }
+
+    function deleteScript(scriptId, scriptName) {
+        if (!confirm(`Удалить скрипт "${scriptName}"?`)) {
+            return;
+        }
+
+        fetch(`/api/scripts/${scriptId}/delete`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Скрипт удален');
+                loadScripts();
+            } else {
+                alert('❌ Ошибка: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('❌ Ошибка соединения: ' + error);
+        });
     }
 
     // Загружаем скрипты при загрузке страницы

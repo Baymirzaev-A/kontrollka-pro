@@ -17,7 +17,7 @@ class DeleteTacacsScript(BaseScript):
     def pre_check(self, connection, device_info):
         """Проверяет, используется ли TACACS"""
         try:
-            command = "display hwtacacs-server-template tacacsgroup verbose"
+            command = "display hwtacacs-server template tacacsgroup verbose"
             logger.info(f"Pre-check: {command}")
 
             output = connection.send_command(
@@ -70,7 +70,7 @@ class DeleteTacacsScript(BaseScript):
         # Команды для удаления
         commands = [
             "system-view",
-            "undo hwtacacs-server-template tacacsgroup",
+            "undo hwtacacs-server template tacacsgroup",
             "return",
             "save",
             "Y"

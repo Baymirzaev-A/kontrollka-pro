@@ -58,7 +58,7 @@ def discover_scripts():
                 logger.error(traceback.format_exc())
 
     logger.info(f"📊 Всего загружено скриптов: {len(scripts)}")
-    _scripts_cache = scripts
+    _scripts_cache = None
     return scripts
 
 

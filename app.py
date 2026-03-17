@@ -12,9 +12,12 @@ import socket
 from functools import wraps
 from datetime import datetime
 from database import DeviceDB
-
+import shutil
+from werkzeug.utils import secure_filename
 # Импортируем загрузчик скриптов
 from scripts import get_all_scripts, get_script
+
+ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
 app.secret_key = 'super-secret-key-for-network-console'
@@ -818,6 +821,169 @@ def cleanup_old_connections():
         for device_id in to_delete:
             del active_connections[device_id]
 
+
+@app.route('/api/scripts/upload', methods=['POST'])
+@login_required
+def script_upload():
+    """Загрузка скрипта .py"""
+    try:
+        if 'script_file' not in request.files:
+            return jsonify({'error': 'Нет файла'}), 400
+
+        file = request.files['script_file']
+        if file.filename == '':
+            return jsonify({'error': 'Файл не выбран'}), 400
+
+        # Проверяем расширение
+        if not file.filename.endswith('.py'):
+            return jsonify({'error': 'Только .py файлы разрешены'}), 400
+
+        # Безопасное имя файла
+        from werkzeug.utils import secure_filename
+        filename = secure_filename(file.filename)
+
+        # Путь к папке scripts (относительно app.py)
+        scripts_dir = os.path.join(os.path.dirname(__file__), 'scripts')
+
+        # Убедимся что папка существует
+        if not os.path.exists(scripts_dir):
+            os.makedirs(scripts_dir)
+
+        # Полный путь к файлу
+        filepath = os.path.join(scripts_dir, filename)
+
+        # Если файл уже существует - добавляем номер
+        counter = 1
+        original_name = filename
+        while os.path.exists(filepath):
+            name, ext = os.path.splitext(original_name)
+            filepath = os.path.join(scripts_dir, f"{name}_{counter}{ext}")
+            counter += 1
+
+        # Сохраняем файл
+        file.save(filepath)
+
+        # Сбрасываем кэш скриптов
+        try:
+            from scripts import _scripts_cache
+            _scripts_cache = None
+        except ImportError:
+            pass
+
+        return jsonify({
+            'success': True,
+            'filename': os.path.basename(filepath),
+            'message': '✅ Скрипт успешно загружен'
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки скрипта: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scripts/template/download', methods=['GET'])
+@login_required
+def download_script_template():
+    """Скачивание шаблона скрипта"""
+    template_content = '''from .base_script import BaseScript
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ScriptName(BaseScript):
+    """
+    Шаблон для создания своего скрипта
+    Замените название класса, методы и добавьте свою логику
+    """
+
+    def get_name(self):
+        """Название скрипта (будет отображаться в списке)"""
+        return "Название скрипта"
+
+    def get_description(self):
+        """Описание скрипта"""
+        return "Описание скрипта"
+
+    def execute(self, connection, device_info):
+        """
+        Основная логика скрипта
+        connection - уже подключенное устройство
+        device_info - информация об устройстве
+        """
+        logger.info(f"Выполнение на {device_info['name']}")
+
+        # Твой код здесь
+        commands = [
+            "system-view",
+            "команда1",
+            "команда2",
+            "return"
+        ]
+
+        results = []
+        for cmd in commands:
+            output = connection.send_command_timing(cmd, strip_command=False)
+            results.append(f"> {cmd}\\n{output}")
+            # Обработка подтверждений
+            if "[Y/N]" in output:
+                output = connection.send_command_timing("Y", strip_command=False)
+                results.append(f"> Y\\n{output}")
+
+        return "\\n".join(results)
+
+    def pre_check(self, connection, device_info):
+        """
+        Проверка перед выполнением (опционально)
+        Верни (True, "OK") если можно выполнять
+        Верни (False, "Причина") если нельзя
+        """
+        return True, "OK"
+
+    def post_check(self, connection, device_info):
+        """
+        Проверка после выполнения (опционально)
+        """
+        return True, "OK"
+'''
+
+    return send_file(
+        io.BytesIO(template_content.encode('utf-8')),
+        mimetype='text/plain',
+        as_attachment=True,
+        download_name='script_template.py'
+    )
+
+@app.route('/api/scripts/<script_id>/delete', methods=['DELETE'])
+@login_required
+def script_delete(script_id):
+    """Удаление скрипта"""
+    try:
+        # Получаем имя файла из ID скрипта
+        module_name = script_id.split('.')[0]
+
+        # Путь к папке scripts
+        scripts_dir = os.path.join(os.path.dirname(__file__), 'scripts')
+        filepath = os.path.join(scripts_dir, f"{module_name}.py")
+
+        # Проверяем, существует ли файл
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'Файл не найден'}), 404
+
+        # Удаляем файл
+        os.remove(filepath)
+
+        # Сбрасываем кэш скриптов
+        try:
+            from scripts import _scripts_cache
+            _scripts_cache = None
+        except ImportError:
+            pass
+
+        return jsonify({'success': True, 'message': 'Скрипт удален'})
+
+    except Exception as e:
+        logger.error(f"Ошибка удаления скрипта: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/device/<int:device_id>/edit')
 @login_required
