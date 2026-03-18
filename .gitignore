@@ -1,0 +1,15 @@
+# Сборка
+dist/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Настройки
+instance/
+device_settings.json
+*.db
+*.log

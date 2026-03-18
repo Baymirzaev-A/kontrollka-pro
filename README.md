@@ -43,8 +43,8 @@
 
 ## Вариант 1: Готовый .exe
 
-1. Скачай архив с последним релизом или собери сам
-2. В папке `dist/` лежит `Kontrollka.exe`
+1. Перейди на страницу [**Releases**](https://github.com/Baymirzaev-A/kontrollka-lite/releases)
+2. Скачай последнюю версию `Kontrollka.exe`
 3. Запусти файл (двойной клик)
 4. Открой браузер → `http://localhost:5000`
 5. Логин: `admin`, пароль: `admin`

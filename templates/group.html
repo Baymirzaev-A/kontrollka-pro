@@ -29,13 +29,20 @@
         <div style="display: flex; gap: 0.5rem;">
             <input type="text" id="groupCommand" class="form-control"
                    placeholder="Введите команду (например: display version)"
-                   autocomplete="off" style="font-family: 'Courier New', monospace;">
+                   autocomplete="off" style="font-family: 'Courier New', monospace; flex: 1;">
             <button onclick="executeGroupCommand()" class="btn btn-primary" id="executeBtn">🚀 Выполнить на всех</button>
             <button onclick="clearResults()" class="btn btn-secondary">🧹 Очистить</button>
         </div>
         <div style="margin-top: 0.5rem; color: #6c757d; font-size: 0.9rem;">
             ⚡ Логин/пароль для всех устройств: admin / DefHccb01
         </div>
+    </div>
+
+    <!-- Кнопка скачивания (вверху) -->
+    <div id="downloadTopContainer" style="display: none; margin-bottom: 1rem;">
+        <button onclick="downloadResults()" class="btn btn-success" style="width: 100%; padding: 0.75rem; font-size: 1.1rem;">
+            📥 Скачать все результаты
+        </button>
     </div>
 
     <!-- Индикатор выполнения -->
@@ -136,10 +143,6 @@
             .replace(/\n/g, '<br>');
     }
 
-    function formatOutput(output) {
-        return escapeHtml(output);
-    }
-
     function toggleResult(index) {
         const element = document.getElementById(`result-${index}`);
         if (element) {
@@ -152,49 +155,50 @@
     }
 
     async function executeGroupCommand() {
-    const command = document.getElementById('groupCommand').value.trim();
+        const command = document.getElementById('groupCommand').value.trim();
 
-    if (!command) {
-        alert('Введите команду');
-        return;
-    }
-
-    if (selectedDevices.length === 0) {
-        alert('Нет выбранных устройств');
-        return;
-    }
-
-    // Показываем индикатор загрузки
-    showLoading();
-    document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">⏳ Выполняется команда на устройствах...</div>';
-
-    try {
-        const response = await fetch('/api/group/execute', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                command: command,
-                device_ids: selectedDevices
-            })
-        });
-
-        const data = await response.json();
-        hideLoading();
-
-        if (data.error) {
-            document.getElementById('resultsContainer').innerHTML =
-                `<div class="alert alert-danger">${data.error}</div>`;
+        if (!command) {
+            alert('Введите команду');
             return;
         }
 
-        displayResults(data.results, command);
+        if (selectedDevices.length === 0) {
+            alert('Нет выбранных устройств');
+            return;
+        }
 
-    } catch (error) {
-        hideLoading();
-        document.getElementById('resultsContainer').innerHTML =
-            `<div class="alert alert-danger">Ошибка соединения: ${error}</div>`;
+        // Показываем индикатор загрузки
+        showLoading();
+        document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">⏳ Выполняется команда на устройствах...</div>';
+        document.getElementById('downloadTopContainer').style.display = 'none';
+
+        try {
+            const response = await fetch('/api/group/execute', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    command: command,
+                    device_ids: selectedDevices
+                })
+            });
+
+            const data = await response.json();
+            hideLoading();
+
+            if (data.error) {
+                document.getElementById('resultsContainer').innerHTML =
+                    `<div class="alert alert-danger">${data.error}</div>`;
+                return;
+            }
+
+            displayResults(data.results, command);
+
+        } catch (error) {
+            hideLoading();
+            document.getElementById('resultsContainer').innerHTML =
+                `<div class="alert alert-danger">Ошибка соединения: ${error}</div>`;
+        }
     }
-}
 
     function displayResults(results, command) {
         const container = document.getElementById('resultsContainer');
@@ -249,16 +253,10 @@
             }
         });
 
-        // Кнопка скачивания
-        html += `
-            <div style="margin-top: 2rem; text-align: center;">
-                <button onclick="downloadResults()" class="btn btn-success">
-                    📥 Скачать все результаты (${results.length} устройств)
-                </button>
-            </div>
-        `;
-
         container.innerHTML = html;
+
+        // Показываем кнопку скачивания вверху
+        document.getElementById('downloadTopContainer').style.display = 'block';
 
         // Сохраняем для скачивания
         window.lastResults = results;
@@ -300,6 +298,7 @@
     function clearResults() {
         document.getElementById('resultsContainer').innerHTML = '';
         document.getElementById('groupCommand').value = '';
+        document.getElementById('downloadTopContainer').style.display = 'none';
         window.lastResults = null;
     }
 

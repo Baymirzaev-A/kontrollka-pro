@@ -7,7 +7,9 @@ echo.
 
 call .venv\Scripts\activate
 
-python -m PyInstaller --onefile ^
+echo Запуск PyInstaller...
+
+pyinstaller --onefile ^
   --add-data "templates;templates" ^
   --add-data "scripts;scripts" ^
   --add-data "device_settings.json;." ^
@@ -30,8 +32,16 @@ python -m PyInstaller --onefile ^
   --name Kontrollka ^
   app.py
 
-echo.
-echo ========================================
-echo    Готово! Файл в папке dist\
-echo ========================================
+if %errorlevel% equ 0 (
+    echo ========================================
+    echo    ✅ Сборка успешно завершена!
+    echo    📁 Файл: dist\Kontrollka.exe
+    echo ========================================
+) else (
+    echo ========================================
+    echo    ❌ ОШИБКА сборки!
+    echo    Смотри вывод выше
+    echo ========================================
+)
+
 pause
