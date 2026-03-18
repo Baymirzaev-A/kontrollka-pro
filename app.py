@@ -283,7 +283,8 @@ def add_device():
             host=data['host'],
             device_type=data.get('device_type', 'huawei'),
             port=int(data.get('port', 22)),
-            description=data.get('description', '')
+            description=data.get('description', ''),
+            purpose=data.get('purpose', 'router')  # ← ДОБАВИТЬ
         )
         return jsonify({'success': True, 'device_id': device_id})
     except Exception as e:
@@ -1004,9 +1005,10 @@ def update_device(device_id):
     device_type = request.form.get('device_type')
     port = int(request.form.get('port', 22))
     description = request.form.get('description', '')
+    purpose = request.form.get('purpose', 'router')  # ← ДОБАВИТЬ
 
     try:
-        db.update_device(device_id, name, host, device_type, port, description)
+        db.update_device(device_id, name, host, device_type, port, description, purpose)
         return redirect(url_for('index'))
     except Exception as e:
         return f"Ошибка: {e}", 400

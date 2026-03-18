@@ -42,6 +42,7 @@
                     <th>IP адрес</th>
                     <th>Порт</th>
                     <th>Тип</th>
+                    <th>Назначение</th>
                     <th>Описание</th>
                     <th>Действия</th>
                 </tr>
@@ -54,16 +55,27 @@
                     <td>
                         <input type="checkbox" class="device-checkbox" value="{{ device.id }}" onchange="updateGroupButton()">
                     </td>
-                    <td><strong>{{ device.name }}</strong></td>
+                    <td>
+                        <a href="/device/{{ device.id }}" style="text-decoration: none; color: #007bff; font-weight: 500; display: block; cursor: pointer;">
+                            {{ device.name }}
+                        </a>
+                    </td>
                     <td>{{ device.host }}</td>
                     <td>{{ device.port }}</td>
                     <td><span class="badge" style="background: #6c757d; color: white;">{{ device.device_type }}</span></td>
-                    <td>{{ device.description or '-' }}</td>
                     <td>
-                        <a href="/device/{{ device.id }}" class="btn btn-primary btn-sm">Консоль</a>
-                        <button class="btn btn-info btn-sm" onclick="showScriptsForDevice({{ device.id }})">📜 Скрипты</button>
-                        <a href="/device/{{ device.id }}/edit" class="btn btn-warning btn-sm">✏️ Ред.</a>
-                        <button class="btn btn-danger btn-sm" onclick="deleteDevice({{ device.id }})">🗑️</button>
+                        <span class="badge purpose-{{ device.purpose }}">
+                            {% if device.purpose == 'router' %}🖧 Роутер
+                            {% elif device.purpose == 'switch' %}🔄 Коммутатор
+                            {% elif device.purpose == 'firewall' %}🛡️ Файрвол
+                            {% else %}{{ device.purpose }}
+                            {% endif %}
+                        </span>
+                     </td>
+                    <td>{{ device.description or '-' }}</td>
+                    <td style="white-space: nowrap;">
+                        <a href="/device/{{ device.id }}/edit" class="btn btn-warning btn-sm" title="Редактировать" style="display: inline-flex; align-items: center; justify-content: center; height: 31px;">✏️</a>
+                        <button class="btn btn-danger btn-sm" onclick="deleteDevice({{ device.id }})" title="Удалить" style="display: inline-flex; align-items: center; justify-content: center; height: 31px;">🗑️</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -110,6 +122,14 @@
                 <input type="number" id="devicePort" class="form-control" value="22">
             </div>
             <div class="form-group">
+                <label>Назначение:</label>
+                <select id="devicePurpose" class="form-control">
+                    <option value="router">Роутер</option>
+                    <option value="switch">Коммутатор</option>
+                    <option value="firewall">Файрвол</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label>Описание</label>
                 <input type="text" id="deviceDescription" class="form-control">
             </div>
@@ -117,6 +137,7 @@
                 <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">Отмена</button>
                 <button type="submit" class="btn btn-success">Сохранить</button>
             </div>
+
         </form>
     </div>
 </div>
@@ -380,7 +401,8 @@
             host: document.getElementById('deviceHost').value,
             device_type: document.getElementById('deviceType').value,
             port: parseInt(document.getElementById('devicePort').value),
-            description: document.getElementById('deviceDescription').value
+            description: document.getElementById('deviceDescription').value,
+            purpose: document.getElementById('devicePurpose').value
         };
 
         showLoading();
@@ -451,15 +473,96 @@
     .table td, .table th {
         vertical-align: middle;
     }
-    .btn-sm {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-    }
     #searchInput {
         padding: 0.75rem;
     }
     .modal-content {
         max-width: 600px;
+    }
+
+    /* Стили для кликабельного имени */
+    td a[href^="/device/"] {
+        text-decoration: none;
+        color: #007bff;
+        font-weight: 500;
+        transition: all 0.2s;
+        display: inline-block;  /* было block, стало inline-block */
+        padding: 2px 0;
+        width: auto;
+    }
+    td a[href^="/device/"]:hover {
+        color: #0056b3;
+        text-decoration: underline;
+        background-color: rgba(0,123,255,0.05);
+        border-radius: 3px;
+    }
+
+    /* Кнопки */
+    .btn-sm {
+        margin: 0 2px;
+        padding: 0.25rem 0.4rem;
+        font-size: 0.875rem;
+        display: inline-block !important;
+        width: auto !important;
+        height: auto !important;
+        line-height: 1.5 !important;
+        vertical-align: middle !important;
+    }
+    .btn-warning, .btn-danger {
+        opacity: 0.85;
+        transition: opacity 0.2s;
+    }
+    .btn-warning:hover, .btn-danger:hover {
+        opacity: 1;
+    }
+
+    /* Бейдж типа устройства */
+    .badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 4px;
+        background-color: #6c757d;
+        color: white;
+    }
+
+    /* Бейджи назначения */
+    .purpose-router {
+        background: #ffc107 !important;
+        color: #000 !important;
+    }
+    .purpose-switch {
+        background: #17a2b8 !important;
+        color: #fff !important;
+    }
+    .purpose-firewall {
+        background: #dc3545 !important;
+        color: #fff !important;
+    }
+    .purpose-router, .purpose-switch, .purpose-firewall {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 4px;
+    }
+    /* Выравнивание кнопок */
+    td .btn-warning, td .btn-danger {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 31px !important;
+        width: 38px !important;
+        padding: 0 !important;
+        margin: 0 2px;
+        vertical-align: middle;
+    }
+
+    /* Убираем лишние отступы у иконок */
+    .btn-warning, .btn-danger {
+        font-size: 1rem !important;
+        line-height: 1 !important;
     }
 </style>
 {% endblock %}

@@ -21,6 +21,7 @@ class DeviceDB:
                     device_type TEXT NOT NULL,
                     port INTEGER DEFAULT 22,
                     description TEXT,
+                    purpose TEXT DEFAULT 'router',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -59,15 +60,15 @@ class DeviceDB:
         """Добавляет тестовые устройства"""
         cursor = conn.cursor()
         test_devices = [
-            ('switch-01', '10.0.0.2', 'huawei', 22, 'Коммутатор Huawei S5731'),
-            ('router-01', '10.0.0.1', 'huawei', 22, 'Маршрутизатор Huawei AR')
+            ('switch-01', '10.0.0.2', 'huawei', 22, 'Коммутатор Huawei S5731', 'switch'),
+            ('router-01', '10.0.0.1', 'huawei', 22, 'Маршрутизатор Huawei AR', 'router')
         ]
 
-        for name, host, dev_type, port, desc in test_devices:
+        for name, host, dev_type, port, desc, purpose in test_devices:
             cursor.execute('''
-                INSERT INTO devices (name, host, device_type, port, description)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (name, host, dev_type, port, desc))
+                INSERT INTO devices (name, host, device_type, port, description, purpose)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (name, host, dev_type, port, desc, purpose))
 
     # ========== МЕТОДЫ ДЛЯ УСТРОЙСТВ ==========
 
@@ -88,14 +89,14 @@ class DeviceDB:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def add_device(self, name, host, device_type='huawei', port=22, description=''):
+    def add_device(self, name, host, device_type='huawei', port=22, description='', purpose='router'):
         """Добавляет новое устройство"""
         with sqlite3.connect(self.db_file) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO devices (name, host, device_type, port, description)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (name, host, device_type, port, description))
+                INSERT INTO devices (name, host, device_type, port, description, purpose)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (name, host, device_type, port, description, purpose))
             conn.commit()
             return cursor.lastrowid
 
@@ -180,15 +181,15 @@ class DeviceDB:
             ''', (device_id, limit))
             return [dict(row) for row in cursor.fetchall()]
 
-    def update_device(self, device_id, name, host, device_type, port, description):
+    def update_device(self, device_id, name, host, device_type, port, description, purpose):
         """Обновляет данные устройства"""
         with sqlite3.connect(self.db_file) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE devices 
-                SET name = ?, host = ?, device_type = ?, port = ?, description = ?
+                SET name = ?, host = ?, device_type = ?, port = ?, description = ?, purpose = ?
                 WHERE id = ?
-            ''', (name, host, device_type, port, description, device_id))
+            ''', (name, host, device_type, port, description, purpose, device_id))
             conn.commit()
 
     def delete_config(self, config_id):
