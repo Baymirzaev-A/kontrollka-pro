@@ -10,14 +10,23 @@
             <button class="btn btn-success" onclick="showAddDeviceModal()">➕ Добавить устройство</button>
         </div>
     </div>
-
-    <!-- Поиск и групповые операции -->
+        <!-- Поиск и групповые операции -->
     <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 250px;">
             <input type="text" id="searchInput" class="form-control"
                    placeholder="🔍 Поиск по имени, IP, описанию..."
                    onkeyup="filterDevices()">
         </div>
+
+        <!-- Фильтр по назначению -->
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span style="color: #6c757d;">Фильтр:</span>
+            <button class="btn btn-sm btn-outline-primary" onclick="filterByPurpose('all')" id="filterAll">Все</button>
+            <button class="btn btn-sm btn-outline-warning" onclick="filterByPurpose('router')" id="filterRouter">🖧 Роутеры</button>
+            <button class="btn btn-sm btn-outline-info" onclick="filterByPurpose('switch')" id="filterSwitch">🔄 Коммутаторы</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="filterByPurpose('firewall')" id="filterFirewall">🛡️ Файрволы</button>
+        </div>
+
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn btn-primary" onclick="goToGroupConsole()" id="groupBtn" disabled>
                 👥 Групповая консоль (<span id="selectedCount">0</span>)
@@ -51,7 +60,8 @@
                 {% for device in devices %}
                 <tr class="device-row" data-name="{{ device.name|lower }}"
                     data-host="{{ device.host }}"
-                    data-description="{{ device.description|lower }}">
+                    data-description="{{ device.description|lower }}"
+                    data-purpose="{{ device.purpose }}">
                     <td>
                         <input type="checkbox" class="device-checkbox" value="{{ device.id }}" onchange="updateGroupButton()">
                     </td>
@@ -171,26 +181,90 @@
 
 <script>
     // ===== ФИЛЬТРАЦИЯ =====
+    let currentPurposeFilter = 'all';
+
     function filterDevices() {
-        const searchText = document.getElementById('searchInput').value.toLowerCase();
-        const rows = document.querySelectorAll('.device-row');
-        let visibleCount = 0;
-
-        rows.forEach(row => {
-            const name = row.dataset.name || '';
-            const host = row.dataset.host || '';
-            const desc = row.dataset.description || '';
-
-            if (name.includes(searchText) || host.includes(searchText) || desc.includes(searchText)) {
-                row.style.display = '';
-                visibleCount++;
-            } else {
-                row.style.display = 'none';
-            }
-        });
-
-        document.getElementById('noResults').style.display = visibleCount === 0 ? 'block' : 'none';
+    applyFilters();
     }
+
+    function filterByPurpose(purpose) {
+    currentPurposeFilter = purpose;
+
+    // Обновляем активную кнопку
+    document.querySelectorAll('[id^="filter"]').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    if (purpose === 'all') {
+        document.getElementById('filterAll').classList.add('active');
+    } else if (purpose === 'router') {
+        document.getElementById('filterRouter').classList.add('active');
+    } else if (purpose === 'switch') {
+        document.getElementById('filterSwitch').classList.add('active');
+    } else if (purpose === 'firewall') {
+        document.getElementById('filterFirewall').classList.add('active');
+    }
+
+    applyFilters();
+    }
+
+    function applyFilters() {
+    const searchText = document.getElementById('searchInput').value.toLowerCase().trim();
+    const rows = document.querySelectorAll('.device-row');
+    let visibleCount = 0;
+
+    // Разбираем поисковый запрос на отдельные элементы
+    let searchTerms = [];
+    if (searchText) {
+        // Разделяем по пробелам, табам, запятым, переносам строк
+        searchTerms = searchText.split(/[\s,\t\n\r]+/).filter(term => term.length > 0);
+    }
+
+    rows.forEach(row => {
+        const name = row.dataset.name || '';
+        const host = row.dataset.host || '';
+        const desc = row.dataset.description || '';
+        const purpose = row.dataset.purpose;
+
+        // Проверяем, соответствует ли строка хотя бы одному поисковому термину
+        let matchesSearch = false;
+
+        if (searchTerms.length === 0) {
+            matchesSearch = true;  // Пустой поиск - показываем всё
+        } else {
+            // Проверяем каждый поисковый термин
+            for (let term of searchTerms) {
+                // Если терм похож на IP (содержит точки) - ищем точное совпадение в host
+                if (term.includes('.')) {
+                    if (host.includes(term)) {
+                        matchesSearch = true;
+                        break;
+                    }
+                } else {
+                    // Иначе ищем в имени или описании
+                    if (name.includes(term) || desc.includes(term)) {
+                        matchesSearch = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Фильтр по назначению
+        const matchesPurpose = currentPurposeFilter === 'all' ||
+                              purpose === currentPurposeFilter;
+
+        if (matchesSearch && matchesPurpose) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    document.getElementById('noResults').style.display = visibleCount === 0 ? 'block' : 'none';
+    }
+
 
     // ===== ЧЕКБОКСЫ =====
     function updateGroupButton() {
@@ -212,13 +286,31 @@
     }
 
     function selectAll() {
-        document.getElementById('selectAllCheckbox').checked = true;
-        toggleAllCheckboxes();
+    const checkboxes = document.querySelectorAll('.device-checkbox');
+    const rows = document.querySelectorAll('.device-row');
+
+    checkboxes.forEach((checkbox, index) => {
+        const row = rows[index];
+        // Проверяем, видима ли строка (не display: none)
+        if (row.style.display !== 'none') {
+            checkbox.checked = true;
+        } else {
+            checkbox.checked = false;
+        }
+    });
+
+    document.getElementById('selectAllCheckbox').checked = false;
+    updateGroupButton();
     }
 
     function deselectAll() {
-        document.getElementById('selectAllCheckbox').checked = false;
-        toggleAllCheckboxes();
+    const checkboxes = document.querySelectorAll('.device-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = false;
+    });
+
+    document.getElementById('selectAllCheckbox').checked = false;
+    updateGroupButton();
     }
 
     function goToGroupConsole() {
@@ -563,6 +655,27 @@
     .btn-warning, .btn-danger {
         font-size: 1rem !important;
         line-height: 1 !important;
+    }
+    /* Стили для активных кнопок фильтра */
+    .btn-outline-primary.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+    }
+    .btn-outline-warning.active {
+    background-color: #ffc107;
+    color: black;
+    border-color: #ffc107;
+    }
+    .btn-outline-info.active {
+    background-color: #17a2b8;
+    color: white;
+    border-color: #17a2b8;
+    }
+    .btn-outline-danger.active {
+    background-color: #dc3545;
+    color: white;
+    border-color: #dc3545;
     }
 </style>
 {% endblock %}
