@@ -1034,6 +1034,151 @@ def delete_config(config_id):
     except Exception as e:
         return f"Ошибка: {e}", 400
 
+
+@app.route('/api/import/preview', methods=['POST'])
+@login_required
+def import_preview():
+    """Предпросмотр файла с устройствами"""
+    import pandas as pd
+    import io
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Файл не загружен'}), 400
+
+    file = request.files['file']
+    skip_first_row = request.form.get('skip_first_row', 'true').lower() == 'true'
+
+    try:
+        # Читаем файл в зависимости от расширения
+        filename = file.filename.lower()
+
+        if filename.endswith('.csv'):
+            # Пробуем разные кодировки для CSV
+            content = file.read()
+            try:
+                df = pd.read_csv(io.BytesIO(content), encoding='utf-8-sig')
+            except:
+                try:
+                    df = pd.read_csv(io.BytesIO(content), encoding='cp1251')
+                except:
+                    df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
+        elif filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(file.read()))
+        else:
+            return jsonify({'error': 'Неподдерживаемый формат файла'}), 400
+
+        # Показываем первые 5 строк для предпросмотра
+        preview_data = df.head(5).fillna('').values.tolist()
+
+        return jsonify({
+            'headers': df.columns.tolist(),
+            'preview': preview_data,
+            'total_rows': len(df)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/import/devices', methods=['POST'])
+@login_required
+def import_devices():
+    """Импорт устройств из файла"""
+    import pandas as pd
+    import io
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Файл не загружен'}), 400
+
+    file = request.files['file']
+    skip_first_row = request.form.get('skip_first_row', 'true').lower() == 'true'
+
+    try:
+        # Читаем файл
+        filename = file.filename.lower()
+
+        if filename.endswith('.csv'):
+            content = file.read()
+            try:
+                df = pd.read_csv(io.BytesIO(content), encoding='utf-8-sig')
+            except:
+                try:
+                    df = pd.read_csv(io.BytesIO(content), encoding='cp1251')
+                except:
+                    df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
+        elif filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(file.read()))
+        else:
+            return jsonify({'error': 'Неподдерживаемый формат файла'}), 400
+
+        # Нормализуем названия колонок (нижний регистр, убираем пробелы)
+        df.columns = [col.lower().strip() for col in df.columns]
+
+        # Проверяем обязательные поля
+        required_cols = ['name', 'host']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return jsonify({'error': f'Отсутствуют обязательные колонки: {", ".join(missing_cols)}'}), 400
+
+        results = {
+            'added': 0,
+            'skipped': 0,
+            'errors': []
+        }
+
+        # Получаем список существующих устройств для проверки дубликатов
+        existing_devices = db.get_all_devices()
+        existing_names = [d['name'] for d in existing_devices]
+
+        # Импортируем каждую строку
+        for idx, row in df.iterrows():
+            try:
+                # Проверяем обязательные поля
+                if pd.isna(row.get('name')) or pd.isna(row.get('host')):
+                    results['errors'].append(f"Строка {idx + 2}: пропущены обязательные поля")
+                    continue
+
+                name = str(row['name']).strip()
+                host = str(row['host']).strip()
+
+                # Проверяем дубликаты
+                if name in existing_names:
+                    results['skipped'] += 1
+                    continue
+
+                # Получаем остальные поля с значениями по умолчанию
+                device_type = str(row.get('device_type', 'huawei')).strip() or 'huawei'
+
+                try:
+                    port = int(float(row.get('port', 22)))
+                except:
+                    port = 22
+
+                description = str(row.get('description', '')).strip()
+                purpose = str(row.get('purpose', 'router')).strip() or 'router'
+
+                # Добавляем устройство
+                db.add_device(
+                    name=name,
+                    host=host,
+                    device_type=device_type,
+                    port=port,
+                    description=description,
+                    purpose=purpose
+                )
+
+                # Добавляем имя в список существующих, чтобы не создавать дубликаты в этом же импорте
+                existing_names.append(name)
+                results['added'] += 1
+
+            except Exception as e:
+                results['errors'].append(f"Строка {idx + 2}: {str(e)}")
+
+        return jsonify({'success': True, **results})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Запускаем фоновый поток для очистки
 cleanup_thread = threading.Thread(target=cleanup_old_connections, daemon=True)
 cleanup_thread.start()

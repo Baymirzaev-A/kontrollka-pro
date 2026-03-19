@@ -8,6 +8,7 @@
         <h2>📋 Управление устройствами</h2>
         <div>
             <button class="btn btn-success" onclick="showAddDeviceModal()">➕ Добавить устройство</button>
+            <button class="btn btn-info" onclick="showImportModal()">📥 Импорт из CSV/Excel</button>
         </div>
     </div>
         <!-- Поиск и групповые операции -->
@@ -176,6 +177,55 @@
         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
             <button type="button" class="btn btn-secondary" onclick="closeGroupScriptModal()">Отмена</button>
         </div>
+    </div>
+</div>
+
+<!-- Модальное окно для импорта устройств -->
+<div id="importModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>📥 Импорт устройств из CSV/Excel</h3>
+            <button class="btn btn-sm btn-info" onclick="downloadSampleFile()">⬇️ Скачать образец</button>
+        </div>
+
+        <div style="margin: 1rem 0; padding: 1rem; background: #f8f9fa; border-radius: 5px;">
+            <p style="margin-bottom: 0.5rem; color: #6c757d;">
+                Поддерживаются форматы: .csv, .xlsx, .xls. Первая строка - заголовки.
+            </p>
+            <div style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 5px; font-size: 0.9rem;">
+                <code>name,host,device_type,port,description,purpose</code><br>
+                <code>switch-01,10.0.0.2,huawei,22,Коммутатор,switch</code><br>
+                <code>router-01,10.0.0.1,huawei,22,Маршрутизатор,router</code>
+            </div>
+        </div>
+
+        <form id="importForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Выберите файл:</label>
+                <input type="file" id="importFile" class="form-control" accept=".csv,.xlsx,.xls" required>
+            </div>
+
+            <div style="margin: 1rem 0;">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="skipFirstRow" checked>
+                    <span>Первая строка - заголовки</span>
+                </label>
+            </div>
+
+            <div id="importPreview" style="display: none; margin: 1rem 0; max-height: 300px; overflow-y: auto;">
+                <h4>Предпросмотр:</h4>
+                <table class="table" style="font-size: 0.9rem;">
+                    <thead id="previewHeader"></thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Отмена</button>
+                <button type="button" class="btn btn-info" onclick="previewImport()">Предпросмотр</button>
+                <button type="submit" class="btn btn-success">Импортировать</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -559,6 +609,106 @@
             closeGroupScriptModal();
         }
     }
+    // ===== ИМПОРТ УСТРОЙСТВ =====
+    function showImportModal() {
+    document.getElementById('importModal').classList.add('active');
+    document.getElementById('importPreview').style.display = 'none';
+    document.getElementById('importFile').value = '';
+    }
+
+    function closeImportModal() {
+    document.getElementById('importModal').classList.remove('active');
+    }
+
+    function downloadSampleFile() {
+    const headers = ['name', 'host', 'device_type', 'port', 'description', 'purpose'];
+    const data = [
+        ['switch-01', '10.0.0.2', 'huawei', '22', 'Коммутатор Huawei S5731', 'switch'],
+        ['router-01', '10.0.0.1', 'huawei', '22', 'Маршрутизатор Huawei AR', 'router'],
+        ['fw-01', '10.0.0.3', 'cisco_ios', '22', 'ASA Firewall', 'firewall']
+    ];
+
+    let csv = headers.join(',') + '\n';
+    data.forEach(row => {
+        csv += row.map(cell => `"${cell}"`).join(',') + '\n';
+    });
+
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'sample_devices.csv';
+    link.click();
+    URL.revokeObjectURL(link);
+    }
+
+    function previewImport() {
+    const file = document.getElementById('importFile').files[0];
+    if (!file) {
+        alert('Выберите файл');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('skip_first_row', document.getElementById('skipFirstRow').checked);
+
+    fetch('/api/import/preview', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('❌ ' + data.error);
+            return;
+        }
+
+        const previewHeader = document.getElementById('previewHeader');
+        const previewBody = document.getElementById('previewBody');
+
+        previewHeader.innerHTML = '<tr>' + data.headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+        previewBody.innerHTML = data.preview.map(row =>
+            '<tr>' + row.map(cell => `<td>${cell || '-'}</td>`).join('') + '</tr>'
+        ).join('');
+
+        document.getElementById('importPreview').style.display = 'block';
+    })
+    .catch(error => {
+        alert('❌ Ошибка: ' + error);
+    });
+    }
+
+    document.getElementById('importForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const file = document.getElementById('importFile').files[0];
+    if (!file) {
+        alert('Выберите файл');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('skip_first_row', document.getElementById('skipFirstRow').checked);
+
+    fetch('/api/import/devices', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✅ Импортировано: ${data.added}, пропущено: ${data.skipped}`);
+            closeImportModal();
+            window.location.reload();
+        } else {
+            alert('❌ Ошибка: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('❌ Ошибка: ' + error);
+    });
+    });
 </script>
 
 <style>
