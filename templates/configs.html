@@ -1,45 +1,132 @@
 {% extends "base.html" %}
 
-{% block title %}Сохраненные конфигурации{% endblock %}
+{% block title %}Все конфигурации{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h2>Сохраненные конфигурации</h2>
+        <h2>💾 Все сохраненные конфигурации</h2>
+        <div>
+            <a href="/" class="btn btn-secondary">← Назад</a>
+        </div>
     </div>
 
-    <table class="table">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Устройство</th>
-            <th>IP адрес</th>
-            <th>Дата сохранения</th>
-            <th>Действия</th>  <!-- Новая колонка -->
-        </tr>
-    </thead>
-    <tbody>
-        {% for config in configs %}
-        <tr>
-            <td>#{{ config.id }}</td>
-            <td>{{ config.device_name }}</td>
-            <td>{{ config.host }}</td>
-            <td>{{ config.saved_at }}</td>
-            <td>
-                <a href="/config/{{ config.id }}" class="btn btn-sm btn-primary">Просмотр</a>
-                <a href="/api/config/{{ config.id }}/download" class="btn btn-sm btn-success">Скачать</a>
-                <a href="/config/{{ config.id }}/delete" class="btn btn-sm btn-danger"
-                   onclick="return confirm('Удалить конфигурацию #{{ config.id }}?')">🗑️</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-    {% if not configs %}
-    <div class="alert alert-warning" style="text-align: center;">
-        Нет сохраненных конфигураций. Выполните команду display current-configuration и нажмите "Сохранить конфиг".
+    <div id="configsContainer" style="max-height: 600px; overflow-y: auto;">
+        <div style="text-align: center; padding: 2rem;">Загрузка...</div>
     </div>
-    {% endif %}
+
+    <div id="pagination" style="margin-top: 1rem; text-align: center;"></div>
 </div>
+
+<script>
+    let currentPage = 1;
+    let totalPages = 1;
+
+    async function loadConfigs(page) {
+        currentPage = page;
+        const container = document.getElementById('configsContainer');
+        container.innerHTML = '<div style="text-align: center; padding: 2rem;">Загрузка...</div>';
+
+        try {
+            const response = await fetch(`/api/configs/list?page=${page}&per_page=50`);
+            const data = await response.json();
+
+            if (data.items && data.items.length > 0) {
+                container.innerHTML = data.items.map(item => `
+                    <div style="border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 1rem;">
+                        <div style="background: #f8f9fa; padding: 0.75rem 1rem; border-radius: 5px 5px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong style="font-size: 1.1rem;">${escapeHtml(item.device_name)}</strong>
+                                <span style="color: #6c757d; margin-left: 1rem;">${item.host}</span>
+                                <br>
+                                <small style="color: #6c757d;">${item.saved_at}</small>
+                            </div>
+                            <div>
+                                <button onclick="downloadConfig(${item.id})" class="btn btn-sm btn-success">📥 Скачать</button>
+                                <button onclick="viewConfig(${item.id})" class="btn btn-sm btn-info">👁️ Просмотр</button>
+                                <button onclick="deleteConfig(${item.id})" class="btn btn-sm btn-danger">🗑️ Удалить</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+                totalPages = data.pages;
+                renderPagination(data.page, data.pages);
+            } else {
+                container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #6c757d;">📭 Нет сохраненных конфигураций</div>';
+                renderPagination(1, 1);
+            }
+        } catch (error) {
+            container.innerHTML = `<div class="alert alert-danger">Ошибка загрузки: ${error}</div>`;
+        }
+    }
+
+    function downloadConfig(configId) {
+        window.open(`/api/config/${configId}/download`, '_blank');
+    }
+
+    function viewConfig(configId) {
+        window.open(`/config/${configId}`, '_blank');
+    }
+
+    async function deleteConfig(configId) {
+        if (!confirm('Удалить эту конфигурацию?')) return;
+
+        try {
+            const response = await fetch(`/config/${configId}/delete`);
+            if (response.ok) {
+                loadConfigs(currentPage);
+            } else {
+                alert('Ошибка удаления');
+            }
+        } catch (error) {
+            alert('Ошибка: ' + error);
+        }
+    }
+
+    function renderPagination(currentPage, totalPages) {
+        const container = document.getElementById('pagination');
+        if (!container) return;
+
+        if (totalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center; align-items: center;">';
+
+        if (currentPage > 1) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${currentPage - 1})">← Предыдущая</button>`;
+        }
+
+        html += `<span style="margin: 0 1rem;">Страница ${currentPage} из ${totalPages}</span>`;
+
+        if (currentPage < totalPages) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${currentPage + 1})">Следующая →</button>`;
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadConfigs(1);
+    });
+</script>
+
+<style>
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        margin: 0 2px;
+    }
+</style>
 {% endblock %}

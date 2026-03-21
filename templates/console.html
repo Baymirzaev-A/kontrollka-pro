@@ -39,17 +39,25 @@
     <!-- История команд и сохраненные конфигурации -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
         <div class="card" style="padding: 1rem;">
-            <h3 style="margin-bottom: 0.5rem;">История команд</h3>
-            <div id="command-history" style="max-height: 200px; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0;">История команд</h3>
+                <div id="history-pagination-info" style="font-size: 0.8rem; color: #6c757d;"></div>
+            </div>
+            <div id="command-history" style="max-height: 300px; overflow-y: auto;">
                 <div style="color: #6c757d;">Загрузка...</div>
             </div>
+            <div id="history-pagination" style="margin-top: 0.5rem; text-align: center;"></div>
         </div>
 
         <div class="card" style="padding: 1rem;">
-            <h3 style="margin-bottom: 0.5rem;">Сохраненные конфигурации</h3>
-            <div id="config-history" style="max-height: 200px; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0;">Сохраненные конфигурации</h3>
+                <div id="configs-pagination-info" style="font-size: 0.8rem; color: #6c757d;"></div>
+            </div>
+            <div id="config-history" style="max-height: 300px; overflow-y: auto;">
                 <div style="color: #6c757d;">Загрузка...</div>
             </div>
+            <div id="configs-pagination" style="margin-top: 0.5rem; text-align: center;"></div>
         </div>
     </div>
 </div>
@@ -57,6 +65,16 @@
 <script>
     let deviceId = {{ device.id }};
     let deviceName = "{{ device.name }}";
+
+    // Пагинация для истории команд
+    let historyCurrentPage = 1;
+    let historyTotalPages = 1;
+    let historyPerPage = 20;
+
+    // Пагинация для конфигов
+    let configsCurrentPage = 1;
+    let configsTotalPages = 1;
+    let configsPerPage = 10;
 
     function executeCommand() {
         const command = document.getElementById('command').value.trim();
@@ -98,7 +116,7 @@
                 outputDiv.innerHTML += `<span style="color: #d4d4d4;">${formattedOutput}</span>\n`;
 
                 document.getElementById('command').value = '';
-                loadCommandHistory();
+                loadCommandHistory(historyCurrentPage);  // Обновляем историю, оставаясь на текущей странице
             }
 
             const outputDiv = document.getElementById('output');
@@ -121,7 +139,7 @@
             hideLoading();
             if (data.success) {
                 alert('Конфигурация сохранена');
-                loadConfigHistory();
+                loadConfigHistory(configsCurrentPage);  // Обновляем конфиги, оставаясь на текущей странице
             } else {
                 alert('Ошибка: ' + data.error);
             }
@@ -137,48 +155,142 @@
             '<span style="color: #6a9955;"># Вывод очищен.</span>';
     }
 
-    function loadCommandHistory() {
-        fetch(`/api/device/${deviceId}/history`)
+    // Загрузка истории команд с пагинацией
+    function loadCommandHistory(page) {
+        historyCurrentPage = page;
+
+        fetch(`/api/device/${deviceId}/history?page=${page}&per_page=${historyPerPage}`)
             .then(response => response.json())
-            .then(history => {
+            .then(data => {
                 const container = document.getElementById('command-history');
-                if (history.length === 0) {
+
+                // Обновляем информацию о пагинации
+                historyTotalPages = data.pages;
+                document.getElementById('history-pagination-info').textContent =
+                    `Страница ${data.page} из ${data.pages} (всего ${data.total} записей)`;
+
+                if (data.items.length === 0) {
                     container.innerHTML = '<div style="color: #6c757d;">История пуста</div>';
+                    renderHistoryPagination();
                     return;
                 }
 
-                container.innerHTML = history.map(item =>
+                container.innerHTML = data.items.map(item =>
                     `<div style="padding: 0.3rem 0; border-bottom: 1px solid #e9ecef; cursor: pointer;"
                           onclick="useCommand('${item.command.replace(/'/g, "\\'")}')">
-                        <small style="color: #6c757d;">${new Date(item.executed_at).toLocaleTimeString()}</small>
-                        <div style="font-family: monospace;">${item.command}</div>
+                        <small style="color: #6c757d;">${new Date(item.executed_at).toLocaleString()}</small>
+                        <div style="font-family: monospace; word-break: break-all;">${escapeHtml(item.command)}</div>
                      </div>`
                 ).join('');
+
+                renderHistoryPagination();
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки истории:', error);
+                document.getElementById('command-history').innerHTML =
+                    '<div style="color: #dc3545;">Ошибка загрузки</div>';
             });
     }
 
-    function loadConfigHistory() {
-        fetch(`/api/device/${deviceId}/configs`)
+    // Загрузка конфигов с пагинацией
+    function loadConfigHistory(page) {
+        configsCurrentPage = page;
+
+        fetch(`/api/device/${deviceId}/configs?page=${page}&per_page=${configsPerPage}`)
             .then(response => response.json())
-            .then(configs => {
+            .then(data => {
                 const container = document.getElementById('config-history');
-                if (configs.length === 0) {
+
+                // Обновляем информацию о пагинации
+                configsTotalPages = data.pages;
+                document.getElementById('configs-pagination-info').textContent =
+                    `Страница ${data.page} из ${data.pages} (всего ${data.total} записей)`;
+
+                if (data.items.length === 0) {
                     container.innerHTML = '<div style="color: #6c757d;">Нет сохраненных конфигураций</div>';
+                    renderConfigsPagination();
                     return;
                 }
 
-                container.innerHTML = configs.map(config =>
-                    `<div style="padding: 0.3rem 0; border-bottom: 1px solid #e9ecef;"
+                container.innerHTML = data.items.map(config =>
+                    `<div style="padding: 0.3rem 0; border-bottom: 1px solid #e9ecef; cursor: pointer;"
                           onclick="window.location.href='/config/${config.id}'">
                         <small style="color: #6c757d;">${new Date(config.saved_at).toLocaleString()}</small>
                         <div>Конфигурация #${config.id}</div>
                      </div>`
                 ).join('');
+
+                renderConfigsPagination();
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки конфигов:', error);
+                document.getElementById('config-history').innerHTML =
+                    '<div style="color: #dc3545;">Ошибка загрузки</div>';
             });
+    }
+
+    // Рендер пагинации для истории
+    function renderHistoryPagination() {
+        const container = document.getElementById('history-pagination');
+        if (!container) return;
+
+        if (historyTotalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center;">';
+
+        if (historyCurrentPage > 1) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadCommandHistory(${historyCurrentPage - 1})">← Назад</button>`;
+        }
+
+        html += `<span style="font-size: 0.85rem;">${historyCurrentPage} / ${historyTotalPages}</span>`;
+
+        if (historyCurrentPage < historyTotalPages) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadCommandHistory(${historyCurrentPage + 1})">Вперед →</button>`;
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // Рендер пагинации для конфигов
+    function renderConfigsPagination() {
+        const container = document.getElementById('configs-pagination');
+        if (!container) return;
+
+        if (configsTotalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center;">';
+
+        if (configsCurrentPage > 1) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigHistory(${configsCurrentPage - 1})">← Назад</button>`;
+        }
+
+        html += `<span style="font-size: 0.85rem;">${configsCurrentPage} / ${configsTotalPages}</span>`;
+
+        if (configsCurrentPage < configsTotalPages) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigHistory(${configsCurrentPage + 1})">Вперед →</button>`;
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
     }
 
     function useCommand(cmd) {
         document.getElementById('command').value = cmd;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 
     // Обработка Enter
@@ -189,7 +301,7 @@
     });
 
     // Загружаем историю при старте
-    loadCommandHistory();
-    loadConfigHistory();
+    loadCommandHistory(1);
+    loadConfigHistory(1);
 </script>
 {% endblock %}

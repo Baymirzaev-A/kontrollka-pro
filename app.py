@@ -828,18 +828,30 @@ def save_config(device_id):
 @app.route('/api/device/<int:device_id>/history')
 @login_required
 def get_history(device_id):
-    """Возвращает историю команд"""
-    history = db.get_command_history(device_id)
+    """Возвращает историю команд с пагинацией"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    history = db.get_command_history(device_id, page, per_page)
     return jsonify(history)
 
 
 @app.route('/api/device/<int:device_id>/configs')
 @login_required
 def get_configs(device_id):
-    """Возвращает историю сохраненных конфигураций"""
-    configs = db.get_config_history(device_id)
+    """Возвращает историю сохраненных конфигураций с пагинацией"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    configs = db.get_config_history(device_id, page, per_page)
     return jsonify(configs)
 
+@app.route('/api/configs/list')
+@login_required
+def api_configs_list():
+    """Возвращает список всех конфигураций с пагинацией"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    configs = db.get_all_configs(page, per_page)
+    return jsonify(configs)
 
 @app.route('/api/config/<int:config_id>/download')
 @login_required

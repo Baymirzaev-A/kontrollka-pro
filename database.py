@@ -120,18 +120,37 @@ class DeviceDB:
             conn.commit()
             return cursor.lastrowid
 
-    def get_config_history(self, device_id, limit=20):
-        """Возвращает историю конфигураций"""
+    def get_config_history(self, device_id, page=1, per_page=20):
+        """Возвращает историю конфигураций с пагинацией"""
+        offset = (page - 1) * per_page
+
         with sqlite3.connect(self.db_file) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Получаем общее количество
+            cursor.execute('''
+                SELECT COUNT(*) FROM configs WHERE device_id = ?
+            ''', (device_id,))
+            total = cursor.fetchone()[0]
+
+            # Получаем данные для страницы
             cursor.execute('''
                 SELECT * FROM configs 
                 WHERE device_id = ? 
                 ORDER BY saved_at DESC 
-                LIMIT ?
-            ''', (device_id, limit))
-            return [dict(row) for row in cursor.fetchall()]
+                LIMIT ? OFFSET ?
+            ''', (device_id, per_page, offset))
+
+            items = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'items': items,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': (total + per_page - 1) // per_page
+            }
 
     def get_config(self, config_id):
         """Возвращает конфигурацию по ID"""
@@ -142,19 +161,36 @@ class DeviceDB:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_all_configs(self, limit=50):
-        """Возвращает все сохраненные конфигурации"""
+    def get_all_configs(self, page=1, per_page=50):
+        """Возвращает все сохраненные конфигурации с пагинацией"""
+        offset = (page - 1) * per_page
+
         with sqlite3.connect(self.db_file) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Получаем общее количество
+            cursor.execute('SELECT COUNT(*) FROM configs')
+            total = cursor.fetchone()[0]
+
+            # Получаем данные для страницы
             cursor.execute('''
                 SELECT c.*, d.name as device_name, d.host 
                 FROM configs c
                 JOIN devices d ON c.device_id = d.id
                 ORDER BY c.saved_at DESC 
-                LIMIT ?
-            ''', (limit,))
-            return [dict(row) for row in cursor.fetchall()]
+                LIMIT ? OFFSET ?
+            ''', (per_page, offset))
+
+            items = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'items': items,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': (total + per_page - 1) // per_page
+            }
 
     # ========== МЕТОДЫ ДЛЯ ИСТОРИИ КОМАНД ==========
 
@@ -168,18 +204,37 @@ class DeviceDB:
             ''', (device_id, command, output[:5000]))
             conn.commit()
 
-    def get_command_history(self, device_id, limit=50):
-        """Возвращает историю команд"""
+    def get_command_history(self, device_id, page=1, per_page=50):
+        """Возвращает историю команд с пагинацией"""
+        offset = (page - 1) * per_page
+
         with sqlite3.connect(self.db_file) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Получаем общее количество
+            cursor.execute('''
+                SELECT COUNT(*) FROM command_history WHERE device_id = ?
+            ''', (device_id,))
+            total = cursor.fetchone()[0]
+
+            # Получаем данные для страницы
             cursor.execute('''
                 SELECT * FROM command_history 
                 WHERE device_id = ? 
                 ORDER BY executed_at DESC 
-                LIMIT ?
-            ''', (device_id, limit))
-            return [dict(row) for row in cursor.fetchall()]
+                LIMIT ? OFFSET ?
+            ''', (device_id, per_page, offset))
+
+            items = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'items': items,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': (total + per_page - 1) // per_page
+            }
 
     def update_device(self, device_id, name, host, device_type, port, description, purpose):
         """Обновляет данные устройства"""
