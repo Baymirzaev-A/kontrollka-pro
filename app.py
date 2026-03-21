@@ -16,6 +16,7 @@ import shutil
 from werkzeug.utils import secure_filename
 # Импортируем загрузчик скриптов
 from scripts import get_all_scripts, get_script
+from functools import lru_cache
 
 ALLOWED_EXTENSIONS = {'py'}
 
@@ -23,6 +24,9 @@ app = Flask(__name__)
 app.secret_key = 'super-secret-key-for-network-console'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Сессия живет 1 час
+
+# ==== КОНФИГУРАЦИЯ ГРУППОВЫХ ОПЕРАЦИЙ ====
+MAX_DEVICES_PER_GROUP = 40   # Максимум устройств за один запрос к API
 
 # Кэш для активных соединений
 active_connections = {}
@@ -42,6 +46,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 db = DeviceDB()
+
+# ==== КЕШ ДЛЯ УСТРОЙСТВ ====
+devices_cache = {
+    'data': None,
+    'timestamp': 0,
+    'ttl': 300  # 5 минут (можно настроить)
+}
+
+
+def invalidate_devices_cache():
+    """Сбрасывает кеш устройств"""
+    global devices_cache
+    devices_cache['data'] = None
+    devices_cache['timestamp'] = 0
+    logger.info("🧹 Кеш устройств сброшен")
+
+
+def get_cached_devices():
+    """Получает устройства из кеша или из БД"""
+    global devices_cache
+    current_time = time.time()
+
+    # Проверяем, нужно ли обновить кеш
+    if (devices_cache['data'] is None or
+            current_time - devices_cache['timestamp'] > devices_cache['ttl']):
+        devices_cache['data'] = db.get_all_devices()
+        devices_cache['timestamp'] = current_time
+        logger.info(f"🔄 Кеш устройств обновлен ({len(devices_cache['data'])} устройств)")
+
+    return devices_cache['data']
 
 # ==== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К ОБОРУДОВАНИЮ (меняются через веб) ====
 SETTINGS_FILE = 'device_settings.json'
@@ -217,8 +251,8 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    """Главная страница со списком устройств"""
-    devices = db.get_all_devices()
+    """Главная страница со списком устройств (с кешированием)"""
+    devices = get_cached_devices()  # ← используем кеш
     return render_template('index.html', devices=devices)
 
 
@@ -261,6 +295,79 @@ def view_config(config_id):
     return render_template('view_config.html', config=config, device=device)
 
 
+# ==== API ДЛЯ ПРОВЕРКИ СТАТУСА УСТРОЙСТВ ====
+from utils.ping import check_devices_status, ping_device
+
+
+@app.route('/api/devices/check-status', methods=['POST'])
+@login_required
+def api_check_devices_status():
+    """
+    Проверяет доступность выбранных устройств
+    Ожидает: {"device_ids": [1,2,3]} или {"all": true}
+    """
+    data = request.json
+
+    # Получаем список устройств для проверки
+    if data.get('all'):
+        devices = db.get_all_devices()
+    else:
+        device_ids = data.get('device_ids', [])
+        devices = []
+        for device_id in device_ids:
+            device = db.get_device(device_id)
+            if device:
+                devices.append(device)
+
+    if not devices:
+        return jsonify({'error': 'Нет устройств для проверки'}), 400
+
+    # Проверяем статус
+    statuses = check_devices_status(devices)
+
+    # Формируем ответ
+    result = {}
+    for device in devices:
+        result[device['id']] = {
+            'host': device['host'],
+            'name': device['name'],
+            'online': statuses.get(device['id'], False)
+        }
+
+    # Статистика
+    online_count = sum(1 for s in statuses.values() if s)
+    offline_count = len(devices) - online_count
+
+    return jsonify({
+        'success': True,
+        'statuses': result,
+        'summary': {
+            'total': len(devices),
+            'online': online_count,
+            'offline': offline_count
+        }
+    })
+
+
+@app.route('/api/device/<int:device_id>/ping', methods=['GET'])
+@login_required
+def api_ping_device(device_id):
+    """
+    Проверяет доступность одного устройства
+    """
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'error': 'Устройство не найдено'}), 404
+
+    is_online = ping_device(device['host'])
+
+    return jsonify({
+        'device_id': device_id,
+        'name': device['name'],
+        'host': device['host'],
+        'online': is_online
+    })
+
 # ==== API ДЛЯ УПРАВЛЕНИЯ УСТРОЙСТВАМИ ====
 @app.route('/api/device/<int:device_id>', methods=['GET'])
 @login_required
@@ -284,8 +391,10 @@ def add_device():
             device_type=data.get('device_type', 'huawei'),
             port=int(data.get('port', 22)),
             description=data.get('description', ''),
-            purpose=data.get('purpose', 'router')  # ← ДОБАВИТЬ
+            purpose=data.get('purpose', 'router')
         )
+        invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
+        logger.info(f"✅ Устройство добавлено: {data['name']} (ID: {device_id})")
         return jsonify({'success': True, 'device_id': device_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -297,6 +406,8 @@ def delete_device(device_id):
     """Удаляет устройство"""
     try:
         db.delete_device(device_id)
+        invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
+        logger.info(f"🗑️ Устройство удалено (ID: {device_id})")
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -406,9 +517,18 @@ def execute_group_command():
     if not device_ids:
         return jsonify({'error': 'Не выбрано ни одного устройства'}), 400
 
-    results = []
+    # ===== ПРОВЕРКА ЛИМИТА =====
+    if len(device_ids) > MAX_DEVICES_PER_GROUP:
+        return jsonify({
+            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP} за раз. Выбрано: {len(device_ids)}',
+            'limit': MAX_DEVICES_PER_GROUP,
+            'selected': len(device_ids)
+        }), 400
 
-    for device_id in device_ids:
+    results = []
+    total = len(device_ids)
+
+    for idx, device_id in enumerate(device_ids):
         device = db.get_device(device_id)
         if not device:
             results.append({
@@ -435,7 +555,7 @@ def execute_group_command():
 
         connection = None
         try:
-            logger.info(f"Групповая задача: подключение к {device['host']}")
+            logger.info(f"Групповая задача [{idx + 1}/{total}]: подключение к {device['host']}")
             connection = ConnectHandler(**device_params)
             output = execute_long_command(connection, command)
 
@@ -464,11 +584,19 @@ def execute_group_command():
             if connection:
                 connection.disconnect()
 
+        # Небольшая задержка между подключениями
+        if idx < total - 1:
+            time.sleep(0.1)
+
     return jsonify({
         'success': True,
-        'results': results
+        'results': results,
+        'summary': {
+            'total': total,
+            'success': len([r for r in results if r['success']]),
+            'failed': len([r for r in results if not r['success']])
+        }
     })
-
 
 # ==== API ДЛЯ СКРИПТОВ =====
 @app.route('/api/scripts')
@@ -1005,14 +1133,39 @@ def update_device(device_id):
     device_type = request.form.get('device_type')
     port = int(request.form.get('port', 22))
     description = request.form.get('description', '')
-    purpose = request.form.get('purpose', 'router')  # ← ДОБАВИТЬ
+    purpose = request.form.get('purpose', 'router')
 
     try:
         db.update_device(device_id, name, host, device_type, port, description, purpose)
+        invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
+        logger.info(f"✏️ Устройство обновлено: {name} (ID: {device_id})")
         return redirect(url_for('index'))
     except Exception as e:
         return f"Ошибка: {e}", 400
 
+@app.route('/api/cache/invalidate', methods=['POST'])
+@login_required
+def invalidate_cache():
+    """Ручной сброс кеша (только для админов)"""
+    invalidate_devices_cache()
+    return jsonify({'success': True, 'message': 'Кеш сброшен'})
+
+
+@app.route('/api/cache/status', methods=['GET'])
+@login_required
+def cache_status():
+    """Проверка статуса кеша"""
+    global devices_cache
+    current_time = time.time()
+    cache_age = int(current_time - devices_cache['timestamp']) if devices_cache['timestamp'] > 0 else 0
+
+    return jsonify({
+        'cached': devices_cache['data'] is not None,
+        'devices_count': len(devices_cache['data']) if devices_cache['data'] else 0,
+        'cache_age_seconds': cache_age,
+        'ttl_seconds': devices_cache['ttl'],
+        'expires_in': max(0, devices_cache['ttl'] - cache_age)
+    })
 
 @app.route('/device/<int:device_id>/delete')
 @login_required
