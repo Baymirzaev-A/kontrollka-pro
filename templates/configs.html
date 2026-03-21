@@ -11,6 +11,19 @@
         </div>
     </div>
 
+    <!-- Поиск -->
+    <div style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem;">
+        <input type="text" id="searchInput" class="form-control"
+               placeholder="🔍 Поиск по конфигурациям (по содержимому, имени устройства, IP)..."
+               style="flex: 1;" onkeypress="if(event.key==='Enter') searchConfigs()">
+        <button onclick="searchConfigs()" class="btn btn-primary">🔍 Найти</button>
+        <button onclick="clearSearch()" class="btn btn-secondary">✖️ Очистить</button>
+    </div>
+
+    <div id="searchInfo" style="display: none; margin-bottom: 1rem; padding: 0.5rem; background: #e9ecef; border-radius: 5px;">
+        <span id="searchQueryInfo"></span>
+    </div>
+
     <div id="configsContainer" style="max-height: 600px; overflow-y: auto;">
         <div style="text-align: center; padding: 2rem;">Загрузка...</div>
     </div>
@@ -21,9 +34,14 @@
 <script>
     let currentPage = 1;
     let totalPages = 1;
+    let currentQuery = '';
+    let isSearchMode = false;
 
     async function loadConfigs(page) {
         currentPage = page;
+        isSearchMode = false;
+        document.getElementById('searchInfo').style.display = 'none';
+
         const container = document.getElementById('configsContainer');
         container.innerHTML = '<div style="text-align: center; padding: 2rem;">Загрузка...</div>';
 
@@ -32,24 +50,7 @@
             const data = await response.json();
 
             if (data.items && data.items.length > 0) {
-                container.innerHTML = data.items.map(item => `
-                    <div style="border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 1rem;">
-                        <div style="background: #f8f9fa; padding: 0.75rem 1rem; border-radius: 5px 5px 0 0; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <strong style="font-size: 1.1rem;">${escapeHtml(item.device_name)}</strong>
-                                <span style="color: #6c757d; margin-left: 1rem;">${item.host}</span>
-                                <br>
-                                <small style="color: #6c757d;">${item.saved_at}</small>
-                            </div>
-                            <div>
-                                <button onclick="downloadConfig(${item.id})" class="btn btn-sm btn-success">📥 Скачать</button>
-                                <button onclick="viewConfig(${item.id})" class="btn btn-sm btn-info">👁️ Просмотр</button>
-                                <button onclick="deleteConfig(${item.id})" class="btn btn-sm btn-danger">🗑️ Удалить</button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-
+                displayResults(data.items);
                 totalPages = data.pages;
                 renderPagination(data.page, data.pages);
             } else {
@@ -59,6 +60,94 @@
         } catch (error) {
             container.innerHTML = `<div class="alert alert-danger">Ошибка загрузки: ${error}</div>`;
         }
+    }
+
+    async function searchConfigs() {
+        const query = document.getElementById('searchInput').value.trim();
+
+        if (!query) {
+            alert('Введите текст для поиска');
+            return;
+        }
+
+        currentQuery = query;
+        isSearchMode = true;
+        currentPage = 1;
+
+        document.getElementById('searchInfo').style.display = 'block';
+        document.getElementById('searchQueryInfo').innerHTML = `🔍 Результаты поиска: <strong>${escapeHtml(query)}</strong>`;
+
+        await performSearch(currentPage);
+    }
+
+    async function performSearch(page) {
+        currentPage = page;
+        const container = document.getElementById('configsContainer');
+        container.innerHTML = '<div style="text-align: center; padding: 2rem;">🔍 Поиск...</div>';
+
+        try {
+            const response = await fetch('/api/configs/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    query: currentQuery,
+                    page: page,
+                    per_page: 50
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+                container.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                return;
+            }
+
+            if (data.items && data.items.length > 0) {
+                displayResults(data.items, true);
+                totalPages = data.pages;
+                renderPagination(data.page, data.pages);
+            } else {
+                container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #6c757d;">📭 Ничего не найдено</div>';
+                renderPagination(1, 1);
+            }
+        } catch (error) {
+            container.innerHTML = `<div class="alert alert-danger">Ошибка поиска: ${error}</div>`;
+        }
+    }
+
+    function displayResults(items, isSearch = false) {
+        const container = document.getElementById('configsContainer');
+
+        container.innerHTML = items.map(item => {
+            let contextHtml = '';
+            if (isSearch && item.context) {
+                contextHtml = `
+                    <div style="margin-top: 0.5rem; padding: 0.5rem; background: #f8f9fa; border-radius: 3px; font-size: 0.85rem; font-family: monospace; max-height: 100px; overflow-y: auto;">
+                        ${item.context}
+                    </div>
+                `;
+            }
+
+            return `
+                <div style="border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 1rem;">
+                    <div style="background: #f8f9fa; padding: 0.75rem 1rem; border-radius: 5px 5px 0 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <strong style="font-size: 1.1rem;">${escapeHtml(item.device_name)}</strong>
+                            <span style="color: #6c757d; margin-left: 1rem;">${item.host}</span>
+                            <br>
+                            <small style="color: #6c757d;">📅 ${item.saved_at}</small>
+                        </div>
+                        <div style="margin-top: 0.5rem;">
+                            <button onclick="downloadConfig(${item.id})" class="btn btn-sm btn-success">📥 Скачать</button>
+                            <button onclick="viewConfig(${item.id})" class="btn btn-sm btn-info">👁️ Просмотр</button>
+                            <button onclick="deleteConfig(${item.id})" class="btn btn-sm btn-danger">🗑️ Удалить</button>
+                        </div>
+                    </div>
+                    ${contextHtml}
+                </div>
+            `;
+        }).join('');
     }
 
     function downloadConfig(configId) {
@@ -75,13 +164,25 @@
         try {
             const response = await fetch(`/config/${configId}/delete`);
             if (response.ok) {
-                loadConfigs(currentPage);
+                if (isSearchMode) {
+                    await performSearch(currentPage);
+                } else {
+                    loadConfigs(currentPage);
+                }
             } else {
                 alert('Ошибка удаления');
             }
         } catch (error) {
             alert('Ошибка: ' + error);
         }
+    }
+
+    function clearSearch() {
+        document.getElementById('searchInput').value = '';
+        currentQuery = '';
+        isSearchMode = false;
+        document.getElementById('searchInfo').style.display = 'none';
+        loadConfigs(1);
     }
 
     function renderPagination(currentPage, totalPages) {
@@ -93,20 +194,48 @@
             return;
         }
 
-        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center; align-items: center;">';
+        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center; align-items: center; flex-wrap: wrap;">';
 
         if (currentPage > 1) {
-            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${currentPage - 1})">← Предыдущая</button>`;
+            html += `<button class="btn btn-sm btn-secondary" onclick="goToPage(${currentPage - 1})">← Предыдущая</button>`;
         }
 
-        html += `<span style="margin: 0 1rem;">Страница ${currentPage} из ${totalPages}</span>`;
+        // Показываем номера страниц
+        let startPage = Math.max(1, currentPage - 2);
+        let endPage = Math.min(totalPages, currentPage + 2);
+
+        if (startPage > 1) {
+            html += `<button class="btn btn-sm btn-outline-secondary" onclick="goToPage(1)">1</button>`;
+            if (startPage > 2) html += '<span>...</span>';
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            if (i === currentPage) {
+                html += `<button class="btn btn-sm btn-primary" disabled>${i}</button>`;
+            } else {
+                html += `<button class="btn btn-sm btn-outline-secondary" onclick="goToPage(${i})">${i}</button>`;
+            }
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) html += '<span>...</span>';
+            html += `<button class="btn btn-sm btn-outline-secondary" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+        }
 
         if (currentPage < totalPages) {
-            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${currentPage + 1})">Следующая →</button>`;
+            html += `<button class="btn btn-sm btn-secondary" onclick="goToPage(${currentPage + 1})">Следующая →</button>`;
         }
 
         html += '</div>';
         container.innerHTML = html;
+    }
+
+    function goToPage(page) {
+        if (isSearchMode) {
+            performSearch(page);
+        } else {
+            loadConfigs(page);
+        }
     }
 
     function escapeHtml(text) {
@@ -127,6 +256,15 @@
         padding: 0.25rem 0.5rem;
         font-size: 0.875rem;
         margin: 0 2px;
+    }
+    #searchInput {
+        padding: 0.6rem;
+    }
+    mark {
+        background: #ffc107;
+        color: #000;
+        padding: 0 2px;
+        border-radius: 2px;
     }
 </style>
 {% endblock %}

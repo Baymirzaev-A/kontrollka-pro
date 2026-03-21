@@ -48,6 +48,7 @@
                     <th style="width: 40px;">
                         <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllCheckboxes()">
                     </th>
+                    <th>Статус</th>
                     <th>Имя</th>
                     <th>IP адрес</th>
                     <th>Порт</th>
@@ -65,6 +66,9 @@
                     data-purpose="{{ device.purpose }}">
                     <td>
                         <input type="checkbox" class="device-checkbox" value="{{ device.id }}" onchange="updateGroupButton()">
+                    </td>
+                    <td id="status-{{ device.id }}" style="text-align: center;">
+                        <div class="status-indicator status-loading" style="width: 12px; height: 12px; border-radius: 50%; background: #6c757d; margin: 0 auto;" title="Проверка..."></div>
                     </td>
                     <td>
                         <a href="/device/{{ device.id }}" style="text-decoration: none; color: #007bff; font-weight: 500; display: block; cursor: pointer;">
@@ -709,6 +713,82 @@
         alert('❌ Ошибка: ' + error);
     });
     });
+    // ===== СТАТУС УСТРОЙСТВ =====
+    let statusCheckInterval = null;
+    let isCheckingStatus = false;
+
+    async function loadDevicesStatus() {
+        if (isCheckingStatus) return;
+        isCheckingStatus = true;
+
+        try {
+            const response = await fetch('/api/devices/check-status', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ all: true })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                for (const [deviceId, info] of Object.entries(data.statuses)) {
+                    updateDeviceStatus(deviceId, info.online);
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка проверки статуса:', error);
+        } finally {
+            isCheckingStatus = false;
+        }
+    }
+
+    function updateDeviceStatus(deviceId, isOnline) {
+        const statusCell = document.getElementById(`status-${deviceId}`);
+        if (!statusCell) return;
+
+        const indicator = statusCell.querySelector('.status-indicator');
+        if (!indicator) return;
+
+        if (isOnline) {
+            indicator.style.background = '#28a745';
+            indicator.style.boxShadow = '0 0 5px #28a745';
+            indicator.title = '🟢 Онлайн';
+        } else {
+            indicator.style.background = '#dc3545';
+            indicator.style.boxShadow = 'none';
+            indicator.title = '🔴 Оффлайн';
+        }
+
+        indicator.classList.remove('status-loading');
+    }
+
+    function startStatusAutoRefresh() {
+        // Первая загрузка сразу
+        loadDevicesStatus();
+
+        // Затем каждые 30 секунд
+        if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+        }
+        statusCheckInterval = setInterval(loadDevicesStatus, 30000);
+    }
+
+    function stopStatusAutoRefresh() {
+        if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+            statusCheckInterval = null;
+        }
+    }
+    // ===== АВТООБНОВЛЕНИЕ СТАТУСОВ =====
+    // Запускаем автообновление статусов при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        startStatusAutoRefresh();
+    });
+
+    // Останавливаем при уходе со страницы (опционально)
+    window.addEventListener('beforeunload', function() {
+        stopStatusAutoRefresh();
+    });
 </script>
 
 <style>
@@ -826,6 +906,21 @@
     background-color: #dc3545;
     color: white;
     border-color: #dc3545;
+    }
+    /* Стили для статуса */
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+    }
+    .status-loading {
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 0.4; transform: scale(0.9); }
+        50% { opacity: 1; transform: scale(1.1); }
+        100% { opacity: 0.4; transform: scale(0.9); }
     }
 </style>
 {% endblock %}

@@ -1200,6 +1200,72 @@ def delete_config(config_id):
         return f"Ошибка: {e}", 400
 
 
+@app.route('/api/configs/search', methods=['POST'])
+@login_required
+def search_configs():
+    """Поиск по всем конфигурациям"""
+    data = request.json
+    query = data.get('query', '').strip()
+    page = data.get('page', 1, type=int)
+    per_page = data.get('per_page', 50, type=int)
+
+    if not query:
+        return jsonify({'error': 'Введите текст для поиска'}), 400
+
+    offset = (page - 1) * per_page
+
+    with sqlite3.connect('devices.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Ищем по конфигурациям
+        search_pattern = f'%{query}%'
+
+        # Получаем общее количество
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM configs c
+            JOIN devices d ON c.device_id = d.id
+            WHERE c.config_text LIKE ? OR d.name LIKE ? OR d.host LIKE ?
+        ''', (search_pattern, search_pattern, search_pattern))
+        total = cursor.fetchone()[0]
+
+        # Получаем данные для страницы
+        cursor.execute('''
+            SELECT c.*, d.name as device_name, d.host 
+            FROM configs c
+            JOIN devices d ON c.device_id = d.id
+            WHERE c.config_text LIKE ? OR d.name LIKE ? OR d.host LIKE ?
+            ORDER BY c.saved_at DESC 
+            LIMIT ? OFFSET ?
+        ''', (search_pattern, search_pattern, search_pattern, per_page, offset))
+
+        items = [dict(row) for row in cursor.fetchall()]
+
+        # Для каждого конфига находим фрагмент с искомым текстом
+        for item in items:
+            config_text = item['config_text']
+            # Находим контекст вокруг искомого текста
+            pos = config_text.lower().find(query.lower())
+            if pos != -1:
+                start = max(0, pos - 100)
+                end = min(len(config_text), pos + len(query) + 200)
+                context = config_text[start:end]
+                # Добавляем подсветку
+                context = context.replace(query, f'<mark style="background: #ffc107; color: #000;">{query}</mark>')
+                item['context'] = '...' + context + '...'
+            else:
+                item['context'] = ''
+
+        return jsonify({
+            'items': items,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page,
+            'query': query
+        })
+
 @app.route('/api/import/preview', methods=['POST'])
 @login_required
 def import_preview():

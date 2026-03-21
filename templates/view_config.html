@@ -6,25 +6,25 @@
 <div class="card">
     <div class="card-header">
         <div>
-            <h2>Конфигурация устройства {{ device.name }}</h2>
+            <h2>📄 Конфигурация устройства {{ device.name }}</h2>
             <p style="color: #6c757d;">{{ device.host }} | Сохранена: {{ config.saved_at }}</p>
         </div>
         <div>
             <a href="/configs" class="btn btn-secondary">← К списку</a>
-            <a href="/device/{{ device.id }}" class="btn btn-primary">Открыть консоль</a>
+            <a href="/device/{{ device.id }}" class="btn btn-info">Консоль</a>
             <a href="/api/config/{{ config.id }}/download" class="btn btn-success">Скачать</a>
         </div>
     </div>
-    
-    <div style="background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; padding: 1.5rem; 
-                border-radius: 5px; overflow-x: auto; white-space: pre-wrap; line-height: 1.4;">
-        {% for line in config.config_text.split('\n') %}
-            {% if line.strip() %}
-                {{ line }}<br>
-            {% else %}
-                <br>
-            {% endif %}
-        {% endfor %}
+
+    <div style="background: #1e1e1e; border-radius: 5px; overflow: auto; max-height: 70vh;">
+        <pre style="margin: 0; padding: 1.5rem; font-family: 'Courier New', 'Cascadia Code', monospace; font-size: 13px; line-height: 1.4; color: #d4d4d4; white-space: pre; overflow-x: auto;">{{ config.config_text }}</pre>
     </div>
 </div>
+
+<style>
+    pre {
+        tab-size: 4;
+        -moz-tab-size: 4;
+    }
+</style>
 {% endblock %}
