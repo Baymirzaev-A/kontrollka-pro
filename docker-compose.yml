@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  kontrollka:
+    build: .                     # Собирает из текущей папки (где Dockerfile)
+    container_name: kontrollka
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - AUTH_MODE=ldap
+      - LDAP_SERVER=192.168.1.10
+      - LDAP_DOMAIN=company.local
+      - LDAP_BASE_DN=DC=company,DC=local
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=sqlite:///data/devices.db
+      - HOST=0.0.0.0
+      - PORT=5000
+      - SSL_CERT=/certs/kontrollka.crt
+      - SSL_KEY=/certs/kontrollka.key
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./certs:/certs:ro
+    networks:
+      - kontrollka_network
+
+networks:
+  kontrollka_network:

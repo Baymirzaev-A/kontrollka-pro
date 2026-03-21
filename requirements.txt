@@ -1,5 +1,6 @@
 flask==3.1.3
 netmiko==4.6.0
-pyOpenSSL==23.2.0
 pandas
 openpyxl
+python-dotenv==1.0.0
+ldap3==2.9.1

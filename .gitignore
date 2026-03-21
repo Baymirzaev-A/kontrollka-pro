@@ -13,3 +13,13 @@ instance/
 device_settings.json
 *.db
 *.log
+
+# Секреты
+.env
+.secret_key
+
+# Данные
+data/
+logs/
+certs/*.key
+certs/*.pem

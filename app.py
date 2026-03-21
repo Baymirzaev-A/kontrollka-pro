@@ -7,23 +7,163 @@ import io
 import re
 import json
 import os
-import ssl
-import socket
 from functools import wraps
 from datetime import datetime
 from database import DeviceDB
-import shutil
 from werkzeug.utils import secure_filename
 # Импортируем загрузчик скриптов
 from scripts import get_all_scripts, get_script
-from functools import lru_cache
+import secrets
+import sqlite3
+
+
+# ===== ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env =====
+from dotenv import load_dotenv
+load_dotenv()
+from models.user import UserModel
+from auth import authenticate, AUTH_MODE
+
+print("=== DEBUG ===")
+print(f"AUTH_MODE = {os.environ.get('AUTH_MODE')}")
+print(f"LDAP_SERVER = {os.environ.get('LDAP_SERVER')}")
+print("=============")
 
 ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
-app.secret_key = 'super-secret-key-for-network-console'
+
+# ===== БЕЗОПАСНЫЙ SECRET_KEY =====
+SECRET_KEY = os.environ.get('SECRET_KEY')
+
+if not SECRET_KEY:
+    # Если ключ не задан, пробуем прочитать из файла
+    secret_file = os.path.join(os.path.dirname(__file__), '.secret_key')
+    if os.path.exists(secret_file):
+        with open(secret_file, 'r') as f:
+            SECRET_KEY = f.read().strip()
+    else:
+        # Генерируем новый и сохраняем
+        SECRET_KEY = secrets.token_hex(32)
+        with open(secret_file, 'w') as f:
+            f.write(SECRET_KEY)
+        print(f"⚠️  Сгенерирован новый SECRET_KEY. Сохранен в {secret_file}")
+
+app.secret_key = SECRET_KEY
+
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Сессия живет 1 час
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600
+
+# ===== АВТОМАТИЧЕСКИЙ РЕДИРЕКТ HTTP → HTTPS =====
+
+cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')
+key_file = os.environ.get('SSL_KEY', 'certs/key.pem')
+HAS_SSL = os.path.exists(cert_file) and os.path.exists(key_file)
+
+if HAS_SSL:
+    @app.before_request
+    def before_request_handler():
+        # 1. Редирект HTTP → HTTPS
+        if not request.is_secure:
+            if request.path == '/health':
+                return
+            url = request.url.replace('http://', 'https://', 1)
+            return redirect(url, code=301)
+
+        # 2. Проверка сессии (только для HTTPS)
+        if request.endpoint in ['login', 'static']:
+            return
+
+        if not session.get('logged_in'):
+            return
+
+        username = session.get('username')
+
+        # Проверка режима аутентификации
+        if session.get('auth_mode') != AUTH_MODE:
+            session.clear()
+            logger.warning(f"Режим аутентификации изменился, сессия завершена")
+            return redirect(url_for('login'))
+
+        # Для LDAP режима — проверяем пользователя в AD
+        if AUTH_MODE == 'ldap' and username:
+            from auth.ldap_auth import find_user_dn
+            from auth import map_group_to_role
+
+            user_info = find_user_dn(username)
+
+            if not user_info:
+                session.clear()
+                logger.warning(f"Пользователь {username} удален из AD, сессия завершена")
+                return redirect(url_for('login'))
+
+            new_role = map_group_to_role(user_info['groups'])
+            if session.get('role') != new_role:
+                session['role'] = new_role
+                logger.info(f"Роль пользователя {username} обновлена: {new_role}")
+
+        # Для local режима — проверяем пользователя в БД
+        elif AUTH_MODE == 'local' and username:
+            from models.user import UserModel
+            user_model = UserModel()
+            user = user_model.get_user(username)
+
+            if not user:
+                session.clear()
+                logger.warning(f"Локальный пользователь {username} не найден, сессия завершена")
+                return redirect(url_for('login'))
+
+    # HSTS заголовок
+    @app.after_request
+    def add_hsts_header(response):
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        return response
+
+    print("🔒 HTTPS режим включен. HTTP → HTTPS редирект активен.")
+
+else:
+    @app.before_request
+    def before_request_handler():
+        # Только проверка сессии (без HTTPS редиректа)
+        if request.endpoint in ['login', 'static']:
+            return
+
+        if not session.get('logged_in'):
+            return
+
+        username = session.get('username')
+
+        if session.get('auth_mode') != AUTH_MODE:
+            session.clear()
+            logger.warning(f"Режим аутентификации изменился, сессия завершена")
+            return redirect(url_for('login'))
+
+        if AUTH_MODE == 'ldap' and username:
+            from auth.ldap_auth import find_user_dn
+            from auth import map_group_to_role
+
+            user_info = find_user_dn(username)
+            if not user_info:
+                session.clear()
+                logger.warning(f"Пользователь {username} удален из AD, сессия завершена")
+                return redirect(url_for('login'))
+
+            new_role = map_group_to_role(user_info['groups'])
+            if session.get('role') != new_role:
+                session['role'] = new_role
+                logger.info(f"Роль пользователя {username} обновлена: {new_role}")
+
+        elif AUTH_MODE == 'local' and username:
+            from models.user import UserModel
+            user_model = UserModel()
+            user = user_model.get_user(username)
+
+            if not user:
+                session.clear()
+                logger.warning(f"Локальный пользователь {username} не найден, сессия завершена")
+                return redirect(url_for('login'))
+
+    print("⚠️  HTTP режим (без HTTPS). Редирект не активен.")
+
 
 # ==== КОНФИГУРАЦИЯ ГРУППОВЫХ ОПЕРАЦИЙ ====
 MAX_DEVICES_PER_GROUP = 40   # Максимум устройств за один запрос к API
@@ -124,12 +264,8 @@ DEVICE_USERNAME = device_settings['device_username']
 DEVICE_PASSWORD = device_settings['device_password']
 DEVICE_ENABLE = device_settings['device_enable']
 
-# ==== УЧЕТНЫЕ ДАННЫЕ ДЛЯ ВХОДА В ПРОГРАММУ ====
-APP_USERNAME = "admin"
-APP_PASSWORD = "admin"
 
-
-# ==== ДЕКОРАТОР ДЛЯ ПРОВЕРКИ АВТОРИЗАЦИИ ====
+# ===== ДЕКОРАТОРЫ ДЛЯ ПРОВЕРКИ АВТОРИЗАЦИИ =====
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -138,6 +274,26 @@ def login_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
+
+def role_required(allowed_roles):
+    """Декоратор для проверки ролей"""
+
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not session.get('logged_in'):
+                return redirect(url_for('login'))
+
+            user_role = session.get('role', 'viewer')
+            if user_role not in allowed_roles:
+                return jsonify({'error': 'Доступ запрещен. Недостаточно прав.'}), 403
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    return decorator
 
 
 # Функция для выполнения команд с пагинацией и таймаутами
@@ -228,10 +384,28 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
 
-        if username == APP_USERNAME and password == APP_PASSWORD:
+        # Аутентификация через AD или локальную
+        user = authenticate(username, password)
+
+        if user:
             session['logged_in'] = True
+            session['username'] = user['username']
+            session['role'] = user['role']
+            session['full_name'] = user['full_name']
+            session['auth_mode'] = AUTH_MODE
             session.permanent = True
-            logger.info(f"Пользователь {username} вошел в систему")
+
+            # Сохраняем в БД
+            user_model = UserModel()
+            user_model.get_or_create_user(
+                username=user['username'],
+                email=user.get('email', ''),
+                full_name=user.get('full_name', ''),
+                role=user['role'],
+                auth_source='ldap' if AUTH_MODE == 'ldap' else 'local'
+            )
+
+            logger.info(f"Пользователь {username} вошел в систему (role: {user['role']})")
             return redirect(url_for('index'))
         else:
             error = 'Неверный логин или пароль'
@@ -243,6 +417,9 @@ def login():
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
+    session.pop('username', None)
+    session.pop('role', None)
+    session.pop('full_name', None)
     logger.info("Пользователь вышел из системы")
     return redirect(url_for('login'))
 
@@ -980,7 +1157,6 @@ def script_upload():
             return jsonify({'error': 'Только .py файлы разрешены'}), 400
 
         # Безопасное имя файла
-        from werkzeug.utils import secure_filename
         filename = secure_filename(file.filename)
 
         # Путь к папке scripts (относительно app.py)
@@ -1415,8 +1591,42 @@ cleanup_thread = threading.Thread(target=cleanup_old_connections, daemon=True)
 cleanup_thread.start()
 
 if __name__ == '__main__':
-    app.run(
-        debug=False,
-        host='0.0.0.0',
-        port=5000
-    )
+
+    # ===== ГИБКИЙ HTTPS =====
+    # Проверяем наличие сертификатов
+    cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')
+    key_file = os.environ.get('SSL_KEY', 'certs/key.pem')
+
+    cert_exists = os.path.exists(cert_file) and os.path.exists(key_file)
+
+    if cert_exists:
+        print("\n" + "=" * 60)
+        print("🔒 Kontrollka PRO запущена в режиме HTTPS")
+        print(f"📍 https://{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 5000)}")
+        print("✅ Используется сертификат из папки certs/")
+        print("=" * 60 + "\n")
+
+        app.run(
+            debug=False,
+            host='0.0.0.0',
+            port=5000,
+            ssl_context=(cert_file, key_file)
+        )
+    else:
+        print("\n" + "=" * 60)
+        print("⚠️  Kontrollka PRO запущена в режиме HTTP (без HTTPS)")
+        print(f"📍 http://{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 5000)}")
+        print("")
+        print("📌 Для включения HTTPS:")
+        print("   1. Получите сертификаты от внутреннего CA")
+        print("   2. Скопируйте файлы в папку certs/:")
+        print("      - certs/cert.pem  (сертификат)")
+        print("      - certs/key.pem   (приватный ключ)")
+        print("   3. Перезапустите контейнер: docker-compose restart")
+        print("=" * 60 + "\n")
+
+        app.run(
+            debug=False,
+            host='0.0.0.0',
+            port=5000
+        )
