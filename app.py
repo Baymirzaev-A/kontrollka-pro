@@ -228,52 +228,10 @@ def get_cached_devices():
 
     return devices_cache['data']
 
-# ==== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К ОБОРУДОВАНИЮ (меняются через веб) ====
-SETTINGS_FILE = 'device_settings.json'
-
-
-def load_device_settings():
-    """Загружает настройки подключения к оборудованию"""
-    default_settings = {
-        'device_username': 'admin',
-        'device_password': 'DefHccb01',
-        'device_enable': None,
-        'last_updated': None
-    }
-
-    try:
-        if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, 'r') as f:
-                return json.load(f)
-        else:
-            # Создаем файл с настройками по умолчанию
-            with open(SETTINGS_FILE, 'w') as f:
-                json.dump(default_settings, f, indent=4)
-            return default_settings
-    except Exception as e:
-        logger.error(f"Ошибка загрузки настроек: {e}")
-        return default_settings
-
-
-def save_device_settings(settings):
-    """Сохраняет настройки подключения к оборудованию"""
-    try:
-        settings['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(settings, f, indent=4)
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка сохранения настроек: {e}")
-        return False
-
-
-# Загружаем настройки при старте
-device_settings = load_device_settings()
-
-# Для удобства доступа
-DEVICE_USERNAME = device_settings['device_username']
-DEVICE_PASSWORD = device_settings['device_password']
-DEVICE_ENABLE = device_settings['device_enable']
+# ===== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К ОБОРУДОВАНИЮ =====
+DEVICE_USERNAME = os.environ.get('DEVICE_USERNAME', 'admin')
+DEVICE_PASSWORD = os.environ.get('DEVICE_PASSWORD', 'admin')
+DEVICE_ENABLE = os.environ.get('DEVICE_ENABLE', None)
 
 
 # ===== ДЕКОРАТОРЫ ДЛЯ ПРОВЕРКИ АВТОРИЗАЦИИ =====
@@ -348,39 +306,6 @@ def execute_long_command(connection, command):
     except Exception as e:
         logger.error(f"Ошибка: {str(e)}")
         raise
-
-
-@app.route('/settings')
-@login_required
-def settings_page():
-    """Страница настроек подключения"""
-    return render_template('settings.html', settings=device_settings)
-
-
-@app.route('/api/settings/update', methods=['POST'])
-@login_required
-def update_settings():
-    """Обновляет настройки подключения к оборудованию"""
-    global device_settings, DEVICE_USERNAME, DEVICE_PASSWORD, DEVICE_ENABLE
-
-    new_settings = {
-        'device_username': request.form.get('device_username', '').strip(),
-        'device_password': request.form.get('device_password', '').strip(),
-        'device_enable': request.form.get('device_enable', '').strip() or None,
-        'last_updated': device_settings.get('last_updated')
-    }
-
-    if save_device_settings(new_settings):
-        # Обновляем глобальные переменные
-        device_settings = load_device_settings()
-        DEVICE_USERNAME = device_settings['device_username']
-        DEVICE_PASSWORD = device_settings['device_password']
-        DEVICE_ENABLE = device_settings['device_enable']
-
-        logger.info(f"Настройки подключения обновлены пользователем {session.get('username')}")
-        return redirect(url_for('settings_page'))
-    else:
-        return "Ошибка сохранения настроек", 500
 
 
 # ==== СТРАНИЦА ВХОДА ====
