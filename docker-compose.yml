@@ -2,22 +2,40 @@ version: '3.8'
 
 services:
   kontrollka:
-    build: .                     # Собирает из текущей папки (где Dockerfile)
+    image: baymirzaev/kontrollka-pro:latest
     container_name: kontrollka
     restart: always
     ports:
       - "5000:5000"
     environment:
-      - AUTH_MODE=ldap
-      - LDAP_SERVER=192.168.1.10
-      - LDAP_DOMAIN=company.local
-      - LDAP_BASE_DN=DC=company,DC=local
+      # Основные настройки
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=sqlite:///data/devices.db
       - HOST=0.0.0.0
       - PORT=5000
+
+      # HTTPS
       - SSL_CERT=/certs/kontrollka.crt
       - SSL_KEY=/certs/kontrollka.key
+
+      # Аутентификация
+      - AUTH_MODE=${AUTH_MODE:-local}
+
+      # LDAP (если AUTH_MODE=ldap)
+      - LDAP_SERVER=${LDAP_SERVER}
+      - LDAP_DOMAIN=${LDAP_DOMAIN}
+      - LDAP_BASE_DN=${LDAP_BASE_DN}
+      - LDAP_BIND_USER=${LDAP_BIND_USER}
+      - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD}
+      - AD_GROUP_ADMIN=${AD_GROUP_ADMIN}
+      - AD_GROUP_OPERATOR=${AD_GROUP_OPERATOR}
+      - AD_GROUP_VIEWER=${AD_GROUP_VIEWER}
+
+      # ===== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К ОБОРУДОВАНИЮ =====
+      - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
+      - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
+      - DEVICE_ENABLE=${DEVICE_ENABLE}
+
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
