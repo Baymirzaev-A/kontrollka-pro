@@ -16,7 +16,6 @@ from scripts import get_all_scripts, get_script
 import secrets
 import sqlite3
 
-
 # ===== ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env =====
 from dotenv import load_dotenv
 load_dotenv()
@@ -31,6 +30,18 @@ print("=============")
 ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
+
+from flask_socketio import SocketIO, emit
+
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+@socketio.on('connect')
+def handle_connect():
+    print(f"Client connected")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f"Client disconnected")
 
 # ===== БЕЗОПАСНЫЙ SECRET_KEY =====
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -571,6 +582,11 @@ def add_device():
             purpose=data.get('purpose', 'router')
         )
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
+        socketio.emit('devices_updated', {
+            'action': 'add',
+            'device_id': device_id,
+            'timestamp': datetime.now().isoformat()
+        })
         logger.info(f"✅ Устройство добавлено: {data['name']} (ID: {device_id})")
         return jsonify({'success': True, 'device_id': device_id})
     except Exception as e:
@@ -584,6 +600,11 @@ def delete_device(device_id):
     try:
         db.delete_device(device_id)
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
+        socketio.emit('devices_updated', {
+            'action': 'delete',
+            'device_id': device_id,
+            'timestamp': datetime.now().isoformat()
+        })
         logger.info(f"🗑️ Устройство удалено (ID: {device_id})")
         return jsonify({'success': True})
     except Exception as e:
@@ -1589,6 +1610,13 @@ def import_devices():
 # Запускаем фоновый поток для очистки
 cleanup_thread = threading.Thread(target=cleanup_old_connections, daemon=True)
 cleanup_thread.start()
+
+@app.route('/api/devices/list', methods=['GET'])
+@login_required
+def api_devices_list():
+    devices = get_cached_devices()
+    return jsonify({'success': True, 'devices': devices})
+
 
 if __name__ == '__main__':
 

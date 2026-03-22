@@ -44,7 +44,7 @@
     <div style="overflow-x: auto;">
         <table class="table" id="devicesTable">
             <thead>
-                <tr>
+                 <tr>
                     <th style="width: 40px;">
                         <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllCheckboxes()">
                     </th>
@@ -56,7 +56,7 @@
                     <th>Назначение</th>
                     <th>Описание</th>
                     <th>Действия</th>
-                </tr>
+                 </tr>
             </thead>
             <tbody id="devicesTableBody">
                 {% for device in devices %}
@@ -86,7 +86,7 @@
                             {% else %}{{ device.purpose }}
                             {% endif %}
                         </span>
-                     </td>
+                      </td>
                     <td>{{ device.description or '-' }}</td>
                     <td style="white-space: nowrap;">
                         <a href="/device/{{ device.id }}/edit" class="btn btn-warning btn-sm" title="Редактировать" style="display: inline-flex; align-items: center; justify-content: center; height: 31px;">✏️</a>
@@ -238,85 +238,76 @@
     let currentPurposeFilter = 'all';
 
     function filterDevices() {
-    applyFilters();
+        applyFilters();
     }
 
     function filterByPurpose(purpose) {
-    currentPurposeFilter = purpose;
+        currentPurposeFilter = purpose;
 
-    // Обновляем активную кнопку
-    document.querySelectorAll('[id^="filter"]').forEach(btn => {
-        btn.classList.remove('active');
-    });
+        document.querySelectorAll('[id^="filter"]').forEach(btn => {
+            btn.classList.remove('active');
+        });
 
-    if (purpose === 'all') {
-        document.getElementById('filterAll').classList.add('active');
-    } else if (purpose === 'router') {
-        document.getElementById('filterRouter').classList.add('active');
-    } else if (purpose === 'switch') {
-        document.getElementById('filterSwitch').classList.add('active');
-    } else if (purpose === 'firewall') {
-        document.getElementById('filterFirewall').classList.add('active');
-    }
+        if (purpose === 'all') {
+            document.getElementById('filterAll').classList.add('active');
+        } else if (purpose === 'router') {
+            document.getElementById('filterRouter').classList.add('active');
+        } else if (purpose === 'switch') {
+            document.getElementById('filterSwitch').classList.add('active');
+        } else if (purpose === 'firewall') {
+            document.getElementById('filterFirewall').classList.add('active');
+        }
 
-    applyFilters();
+        applyFilters();
     }
 
     function applyFilters() {
-    const searchText = document.getElementById('searchInput').value.toLowerCase().trim();
-    const rows = document.querySelectorAll('.device-row');
-    let visibleCount = 0;
+        const searchText = document.getElementById('searchInput').value.toLowerCase().trim();
+        const rows = document.querySelectorAll('.device-row');
+        let visibleCount = 0;
 
-    // Разбираем поисковый запрос на отдельные элементы
-    let searchTerms = [];
-    if (searchText) {
-        // Разделяем по пробелам, табам, запятым, переносам строк
-        searchTerms = searchText.split(/[\s,\t\n\r]+/).filter(term => term.length > 0);
-    }
+        let searchTerms = [];
+        if (searchText) {
+            searchTerms = searchText.split(/[\s,\t\n\r]+/).filter(term => term.length > 0);
+        }
 
-    rows.forEach(row => {
-        const name = row.dataset.name || '';
-        const host = row.dataset.host || '';
-        const desc = row.dataset.description || '';
-        const purpose = row.dataset.purpose;
+        rows.forEach(row => {
+            const name = row.dataset.name || '';
+            const host = row.dataset.host || '';
+            const desc = row.dataset.description || '';
+            const purpose = row.dataset.purpose;
 
-        // Проверяем, соответствует ли строка хотя бы одному поисковому термину
-        let matchesSearch = false;
+            let matchesSearch = false;
 
-        if (searchTerms.length === 0) {
-            matchesSearch = true;  // Пустой поиск - показываем всё
-        } else {
-            // Проверяем каждый поисковый термин
-            for (let term of searchTerms) {
-                // Если терм похож на IP (содержит точки) - ищем точное совпадение в host
-                if (term.includes('.')) {
-                    if (host.includes(term)) {
-                        matchesSearch = true;
-                        break;
-                    }
-                } else {
-                    // Иначе ищем в имени или описании
-                    if (name.includes(term) || desc.includes(term)) {
-                        matchesSearch = true;
-                        break;
+            if (searchTerms.length === 0) {
+                matchesSearch = true;
+            } else {
+                for (let term of searchTerms) {
+                    if (term.includes('.')) {
+                        if (host.includes(term)) {
+                            matchesSearch = true;
+                            break;
+                        }
+                    } else {
+                        if (name.includes(term) || desc.includes(term)) {
+                            matchesSearch = true;
+                            break;
+                        }
                     }
                 }
             }
-        }
 
-        // Фильтр по назначению
-        const matchesPurpose = currentPurposeFilter === 'all' ||
-                              purpose === currentPurposeFilter;
+            const matchesPurpose = currentPurposeFilter === 'all' || purpose === currentPurposeFilter;
 
-        if (matchesSearch && matchesPurpose) {
-            row.style.display = '';
-            visibleCount++;
-        } else {
-            row.style.display = 'none';
-        }
-    });
+            if (matchesSearch && matchesPurpose) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
 
-    document.getElementById('noResults').style.display = visibleCount === 0 ? 'block' : 'none';
+        document.getElementById('noResults').style.display = visibleCount === 0 ? 'block' : 'none';
     }
 
 
@@ -340,31 +331,30 @@
     }
 
     function selectAll() {
-    const checkboxes = document.querySelectorAll('.device-checkbox');
-    const rows = document.querySelectorAll('.device-row');
+        const checkboxes = document.querySelectorAll('.device-checkbox');
+        const rows = document.querySelectorAll('.device-row');
 
-    checkboxes.forEach((checkbox, index) => {
-        const row = rows[index];
-        // Проверяем, видима ли строка (не display: none)
-        if (row.style.display !== 'none') {
-            checkbox.checked = true;
-        } else {
-            checkbox.checked = false;
-        }
-    });
+        checkboxes.forEach((checkbox, index) => {
+            const row = rows[index];
+            if (row.style.display !== 'none') {
+                checkbox.checked = true;
+            } else {
+                checkbox.checked = false;
+            }
+        });
 
-    document.getElementById('selectAllCheckbox').checked = false;
-    updateGroupButton();
+        document.getElementById('selectAllCheckbox').checked = false;
+        updateGroupButton();
     }
 
     function deselectAll() {
-    const checkboxes = document.querySelectorAll('.device-checkbox');
-    checkboxes.forEach(cb => {
-        cb.checked = false;
-    });
+        const checkboxes = document.querySelectorAll('.device-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = false;
+        });
 
-    document.getElementById('selectAllCheckbox').checked = false;
-    updateGroupButton();
+        document.getElementById('selectAllCheckbox').checked = false;
+        updateGroupButton();
     }
 
     function goToGroupConsole() {
@@ -427,7 +417,6 @@
                 } else {
                     alert('✅ Скрипт успешно выполнен');
                 }
-                // Покажем результат в консоли браузера
                 console.log('Результат скрипта:', data.output);
             } else {
                 alert('❌ Ошибка: ' + data.error);
@@ -615,103 +604,103 @@
     }
     // ===== ИМПОРТ УСТРОЙСТВ =====
     function showImportModal() {
-    document.getElementById('importModal').classList.add('active');
-    document.getElementById('importPreview').style.display = 'none';
-    document.getElementById('importFile').value = '';
+        document.getElementById('importModal').classList.add('active');
+        document.getElementById('importPreview').style.display = 'none';
+        document.getElementById('importFile').value = '';
     }
 
     function closeImportModal() {
-    document.getElementById('importModal').classList.remove('active');
+        document.getElementById('importModal').classList.remove('active');
     }
 
     function downloadSampleFile() {
-    const headers = ['name', 'host', 'device_type', 'port', 'description', 'purpose'];
-    const data = [
-        ['switch-01', '10.0.0.2', 'huawei', '22', 'Коммутатор Huawei S5731', 'switch'],
-        ['router-01', '10.0.0.1', 'huawei', '22', 'Маршрутизатор Huawei AR', 'router'],
-        ['fw-01', '10.0.0.3', 'cisco_ios', '22', 'ASA Firewall', 'firewall']
-    ];
+        const headers = ['name', 'host', 'device_type', 'port', 'description', 'purpose'];
+        const data = [
+            ['switch-01', '10.0.0.2', 'huawei', '22', 'Коммутатор Huawei S5731', 'switch'],
+            ['router-01', '10.0.0.1', 'huawei', '22', 'Маршрутизатор Huawei AR', 'router'],
+            ['fw-01', '10.0.0.3', 'cisco_ios', '22', 'ASA Firewall', 'firewall']
+        ];
 
-    let csv = headers.join(',') + '\n';
-    data.forEach(row => {
-        csv += row.map(cell => `"${cell}"`).join(',') + '\n';
-    });
+        let csv = headers.join(',') + '\n';
+        data.forEach(row => {
+            csv += row.map(cell => `"${cell}"`).join(',') + '\n';
+        });
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'sample_devices.csv';
-    link.click();
-    URL.revokeObjectURL(link);
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'sample_devices.csv';
+        link.click();
+        URL.revokeObjectURL(link);
     }
 
     function previewImport() {
-    const file = document.getElementById('importFile').files[0];
-    if (!file) {
-        alert('Выберите файл');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('skip_first_row', document.getElementById('skipFirstRow').checked);
-
-    fetch('/api/import/preview', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('❌ ' + data.error);
+        const file = document.getElementById('importFile').files[0];
+        if (!file) {
+            alert('Выберите файл');
             return;
         }
 
-        const previewHeader = document.getElementById('previewHeader');
-        const previewBody = document.getElementById('previewBody');
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('skip_first_row', document.getElementById('skipFirstRow').checked);
 
-        previewHeader.innerHTML = '<tr>' + data.headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
-        previewBody.innerHTML = data.preview.map(row =>
-            '<tr>' + row.map(cell => `<td>${cell || '-'}</td>`).join('') + '</tr>'
-        ).join('');
+        fetch('/api/import/preview', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('❌ ' + data.error);
+                return;
+            }
 
-        document.getElementById('importPreview').style.display = 'block';
-    })
-    .catch(error => {
-        alert('❌ Ошибка: ' + error);
-    });
+            const previewHeader = document.getElementById('previewHeader');
+            const previewBody = document.getElementById('previewBody');
+
+            previewHeader.innerHTML = '<tr>' + data.headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+            previewBody.innerHTML = data.preview.map(row =>
+                '<tr>' + row.map(cell => `<td>${cell || '-'}</td>`).join('') + '</tr>'
+            ).join('');
+
+            document.getElementById('importPreview').style.display = 'block';
+        })
+        .catch(error => {
+            alert('❌ Ошибка: ' + error);
+        });
     }
 
     document.getElementById('importForm').addEventListener('submit', function(e) {
-    e.preventDefault();
+        e.preventDefault();
 
-    const file = document.getElementById('importFile').files[0];
-    if (!file) {
-        alert('Выберите файл');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('skip_first_row', document.getElementById('skipFirstRow').checked);
-
-    fetch('/api/import/devices', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(`✅ Импортировано: ${data.added}, пропущено: ${data.skipped}`);
-            closeImportModal();
-            window.location.reload();
-        } else {
-            alert('❌ Ошибка: ' + data.error);
+        const file = document.getElementById('importFile').files[0];
+        if (!file) {
+            alert('Выберите файл');
+            return;
         }
-    })
-    .catch(error => {
-        alert('❌ Ошибка: ' + error);
-    });
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('skip_first_row', document.getElementById('skipFirstRow').checked);
+
+        fetch('/api/import/devices', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`✅ Импортировано: ${data.added}, пропущено: ${data.skipped}`);
+                closeImportModal();
+                window.location.reload();
+            } else {
+                alert('❌ Ошибка: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('❌ Ошибка: ' + error);
+        });
     });
     // ===== СТАТУС УСТРОЙСТВ =====
     let statusCheckInterval = null;
@@ -763,10 +752,7 @@
     }
 
     function startStatusAutoRefresh() {
-        // Первая загрузка сразу
         loadDevicesStatus();
-
-        // Затем каждые 30 секунд
         if (statusCheckInterval) {
             clearInterval(statusCheckInterval);
         }
@@ -780,15 +766,33 @@
         }
     }
     // ===== АВТООБНОВЛЕНИЕ СТАТУСОВ =====
-    // Запускаем автообновление статусов при загрузке страницы
     document.addEventListener('DOMContentLoaded', function() {
         startStatusAutoRefresh();
     });
 
-    // Останавливаем при уходе со страницы (опционально)
     window.addEventListener('beforeunload', function() {
         stopStatusAutoRefresh();
     });
+    // ===== WEBSOCKET =====
+    let socket = io();
+
+    socket.on('devices_updated', function(data) {
+        console.log('Получено обновление:', data);
+        refreshDevicesList();
+    });
+
+    function refreshDevicesList() {
+        fetch('/api/devices/list')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateDevicesTable(data.devices);
+                    loadDevicesStatus();
+                    applyFilters();
+                }
+            })
+            .catch(error => console.error('Ошибка обновления:', error));
+    }
 </script>
 
 <style>
@@ -802,13 +806,12 @@
         max-width: 600px;
     }
 
-    /* Стили для кликабельного имени */
     td a[href^="/device/"] {
         text-decoration: none;
         color: #007bff;
         font-weight: 500;
         transition: all 0.2s;
-        display: inline-block;  /* было block, стало inline-block */
+        display: inline-block;
         padding: 2px 0;
         width: auto;
     }
@@ -819,7 +822,6 @@
         border-radius: 3px;
     }
 
-    /* Кнопки */
     .btn-sm {
         margin: 0 2px;
         padding: 0.25rem 0.4rem;
@@ -838,7 +840,6 @@
         opacity: 1;
     }
 
-    /* Бейдж типа устройства */
     .badge {
         display: inline-block;
         padding: 0.25rem 0.5rem;
@@ -849,7 +850,6 @@
         color: white;
     }
 
-    /* Бейджи назначения */
     .purpose-router {
         background: #ffc107 !important;
         color: #000 !important;
@@ -869,7 +869,6 @@
         font-weight: 600;
         border-radius: 4px;
     }
-    /* Выравнивание кнопок */
     td .btn-warning, td .btn-danger {
         display: inline-flex !important;
         align-items: center !important;
@@ -881,33 +880,30 @@
         vertical-align: middle;
     }
 
-    /* Убираем лишние отступы у иконок */
     .btn-warning, .btn-danger {
         font-size: 1rem !important;
         line-height: 1 !important;
     }
-    /* Стили для активных кнопок фильтра */
     .btn-outline-primary.active {
-    background-color: #007bff;
-    color: white;
-    border-color: #007bff;
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
     }
     .btn-outline-warning.active {
-    background-color: #ffc107;
-    color: black;
-    border-color: #ffc107;
+        background-color: #ffc107;
+        color: black;
+        border-color: #ffc107;
     }
     .btn-outline-info.active {
-    background-color: #17a2b8;
-    color: white;
-    border-color: #17a2b8;
+        background-color: #17a2b8;
+        color: white;
+        border-color: #17a2b8;
     }
     .btn-outline-danger.active {
-    background-color: #dc3545;
-    color: white;
-    border-color: #dc3545;
+        background-color: #dc3545;
+        color: white;
+        border-color: #dc3545;
     }
-    /* Стили для статуса */
     .status-indicator {
         width: 12px;
         height: 12px;
