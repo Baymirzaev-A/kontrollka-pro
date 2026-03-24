@@ -224,6 +224,39 @@ else:
 # ==== КОНФИГУРАЦИЯ ГРУППОВЫХ ОПЕРАЦИЙ ====
 MAX_DEVICES_PER_GROUP = 40   # Максимум устройств за один запрос к API
 
+# ===== ЗАПРЕЩЕННЫЕ КОМАНДЫ В КОНСОЛИ =====
+DANGEROUS_COMMANDS = [
+    'write', 'save', 'reload', 'reboot', 'restart',
+    'configure', 'config', 'system-view', 'commit',
+    'delete', 'remove', 'erase', 'format',
+    'reset', 'clear', 'default', 'no ',
+    'shutdown', 'undoshutdown', 'interface range',
+    'copy', 'move', 'rename', 'mkdir', 'rmdir',
+    'enable', 'disable', 'username', 'password',
+    'ip route', 'route', 'vlan', 'vlan database',
+    'snmp-server', 'logging', 'ntp', 'clock'
+]
+
+
+def is_dangerous_command(command):
+    """Проверяет, является ли команда опасной (только для консоли)"""
+    if not command:
+        return False
+
+    cmd_lower = command.lower().strip()
+
+    # Разрешаем show/display команды
+    if cmd_lower.startswith(('show', 'display', 'ping', 'traceroute', 'tracert', 'dir')):
+        return False
+
+    # Проверяем на опасные
+    for dangerous in DANGEROUS_COMMANDS:
+        if cmd_lower.startswith(dangerous) or f' {dangerous}' in cmd_lower:
+            return True
+
+    return False
+
+
 # Кэш для активных соединений
 active_connections = {}
 connection_lock = threading.Lock()
@@ -623,6 +656,14 @@ def execute_command(device_id):
     if not command:
         return jsonify({'error': 'Команда не указана'}), 400
 
+        # ===== ПРОВЕРКА НА ОПАСНЫЕ КОМАНДЫ =====
+    if is_dangerous_command(command):
+        return jsonify({
+            'error': '❌ Эта команда запрещена в консоли. Используйте скрипты для изменения конфигурации.',
+            'command': command,
+            'allowed_only': 'show/display команды и скрипты'
+        }), 403
+
     device = db.get_device(device_id)
     if not device:
         return jsonify({'error': 'Устройство не найдено'}), 404
@@ -713,7 +754,12 @@ def execute_group_command():
 
     if not command:
         return jsonify({'error': 'Команда не указана'}), 400
-
+        # ===== ПРОВЕРКА НА ОПАСНЫЕ КОМАНДЫ =====
+    if is_dangerous_command(command):
+        return jsonify({
+            'error': '❌ Эта команда запрещена в консоли. Используйте скрипты для изменения конфигурации.',
+            'command': command
+        }), 403
     if not device_ids:
         return jsonify({'error': 'Не выбрано ни одного устройства'}), 400
 
