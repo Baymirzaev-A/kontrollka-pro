@@ -26,6 +26,7 @@
             <button class="btn btn-sm btn-outline-warning" onclick="filterByPurpose('router')" id="filterRouter">🖧 Роутеры</button>
             <button class="btn btn-sm btn-outline-info" onclick="filterByPurpose('switch')" id="filterSwitch">🔄 Коммутаторы</button>
             <button class="btn btn-sm btn-outline-danger" onclick="filterByPurpose('firewall')" id="filterFirewall">🛡️ Файрволы</button>
+            <button class="btn btn-sm btn-outline-success" onclick="filterByPurpose('server')" id="filterServer">🖥️ Серверы</button>
         </div>
 
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -83,6 +84,7 @@
                             {% if device.purpose == 'router' %}🖧 Роутер
                             {% elif device.purpose == 'switch' %}🔄 Коммутатор
                             {% elif device.purpose == 'firewall' %}🛡️ Файрвол
+                            {% elif device.purpose == 'server' %}🖥️ Сервер
                             {% else %}{{ device.purpose }}
                             {% endif %}
                         </span>
@@ -191,6 +193,7 @@
                     <option value="router">Роутер</option>
                     <option value="switch">Коммутатор</option>
                     <option value="firewall">Файрвол</option>
+                    <option value="server">Сервер (Linux/Unix)</option>
                 </select>
             </div>
             <div class="form-group">
@@ -1015,6 +1018,10 @@ let pendingStatusRequests = {};
         0% { opacity: 0.4; transform: scale(0.9); }
         50% { opacity: 1; transform: scale(1.1); }
         100% { opacity: 0.4; transform: scale(0.9); }
+    }
+    .purpose-server {
+    background: #28a745 !important;
+    color: #fff !important;
     }
 </style>
 {% endblock %}

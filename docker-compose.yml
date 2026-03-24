@@ -31,17 +31,27 @@ services:
       - AD_GROUP_OPERATOR=${AD_GROUP_OPERATOR}
       - AD_GROUP_VIEWER=${AD_GROUP_VIEWER}
 
-      # ===== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К ОБОРУДОВАНИЮ =====
+      # Учетные данные для сетевого оборудования
       - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
       - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
       - DEVICE_ENABLE=${DEVICE_ENABLE}
+
+      # Учетные данные для серверов (Linux/Unix)
+      - SERVER_USERNAME=${SERVER_USERNAME:-root}
+      - SERVER_PASSWORD=${SERVER_PASSWORD}
+      - SERVER_KEY_FILE=${SERVER_KEY_FILE}
+
+      # Redis для координации WebSocket (опционально)
+      - REDIS_URL=${REDIS_URL}
 
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./certs:/certs:ro
+      - ./ssh_keys:/app/ssh_keys:ro  # для SSH-ключей серверов
     networks:
       - kontrollka_network
 
 networks:
   kontrollka_network:
+    driver: bridge

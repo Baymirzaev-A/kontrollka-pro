@@ -3,12 +3,21 @@
 {% block title %}{{ device.name }} - Консоль{% endblock %}
 
 {% block content %}
+{% if device.purpose != 'server' %}
 <div class="alert alert-warning" style="margin-bottom: 1rem; background: #fff3cd; border-left: 4px solid #ffc107; padding: 1rem;">
     <strong>⚠️ Консоль только для просмотра</strong><br>
     Команды изменения (<code>save, write, configure, reload, system-view</code> и др.)
     выполняются только через <a href="/scripts" style="text-decoration: underline;">скрипты</a>.
     Разрешены только <code>show/display</code> команды.
 </div>
+{% endif %}
+
+{% if device.purpose == 'server' %}
+<div class="alert alert-success" style="margin-bottom: 1rem;">
+    🖥️ Подключение к серверу <strong>{{ device.name }}</strong> ({{ device.host }}:{{ device.port }})<br>
+    Команды выполняются через SSH. Доступны стандартные Linux-команды.
+</div>
+{% endif %}
 <div class="card">
     <div class="card-header">
         <div>
@@ -32,7 +41,9 @@
             <input type="text" id="command" class="form-control" placeholder="Введите команду (например: display version)"
                    autocomplete="off" style="font-family: 'Courier New', monospace;">
             <button onclick="executeCommand()" id="execute-btn" class="btn btn-primary">Выполнить</button>
+            {% if device.purpose != 'server' %}
             <button onclick="saveConfig()" id="save-config-btn" class="btn btn-warning">Сохранить конфиг</button>
+            {% endif %}
             <button onclick="clearOutput()" class="btn btn-secondary">Очистить</button>
         </div>
 
@@ -55,6 +66,7 @@
             <div id="history-pagination" style="margin-top: 0.5rem; text-align: center;"></div>
         </div>
 
+        {% if device.purpose != 'server' %}
         <div class="card" style="padding: 1rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                 <h3 style="margin: 0;">Сохраненные конфигурации</h3>
@@ -65,6 +77,13 @@
             </div>
             <div id="configs-pagination" style="margin-top: 0.5rem; text-align: center;"></div>
         </div>
+        {% else %}
+        <!-- Для серверов показываем заглушку или ничего -->
+        <div class="card" style="padding: 1rem; background: #f8f9fa;">
+            <h3 style="margin: 0; color: #6c757d;">📁 Конфигурации</h3>
+            <p style="color: #6c757d; margin-top: 0.5rem;">Для серверов сохранение конфигураций не поддерживается.</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -308,6 +327,8 @@
 
     // Загружаем историю при старте
     loadCommandHistory(1);
+    {% if device.purpose != 'server' %}
     loadConfigHistory(1);
+    {% endif %}
 </script>
 {% endblock %}

@@ -316,9 +316,26 @@ DEVICE_USERNAME = os.environ.get('DEVICE_USERNAME', 'admin')
 DEVICE_PASSWORD = os.environ.get('DEVICE_PASSWORD', 'admin')
 DEVICE_ENABLE = os.environ.get('DEVICE_ENABLE', None)
 
+# Отдельные учетные данные для серверов
+SERVER_USERNAME = os.environ.get('SERVER_USERNAME', 'root')
+SERVER_PASSWORD = os.environ.get('SERVER_PASSWORD', '')
+SERVER_KEY_FILE = os.environ.get('SERVER_KEY_FILE', None)  # опционально: путь к SSH-ключу
 
 def get_device_params(device):
     """Возвращает параметры подключения с учётом особенностей вендора"""
+    # Для серверов используем отдельные учетные данные
+    if device.get('purpose') == 'server':
+        username = SERVER_USERNAME
+        password = SERVER_PASSWORD
+        enable = None  # на серверах нет enable
+        device_type = 'linux' if device.get('device_type') == 'linux' else 'generic_termserver'
+    else:
+        username = DEVICE_USERNAME
+        password = DEVICE_PASSWORD
+        enable = DEVICE_ENABLE
+        device_type = device['device_type']
+
+
     params = {
         'device_type': device['device_type'],
         'host': device['host'],
@@ -329,6 +346,11 @@ def get_device_params(device):
         'session_timeout': 60,
         'global_delay_factor': 2,
     }
+
+    # SSH-ключ для серверов (если задан)
+    if device.get('purpose') == 'server' and SERVER_KEY_FILE and os.path.exists(SERVER_KEY_FILE):
+        params['use_keys'] = True
+        params['key_file'] = SERVER_KEY_FILE
 
     # Особенности для разных вендоров
     if device['device_type'] == 'cisco_asa':
@@ -886,6 +908,7 @@ def execute_group_command():
 # ==== API ДЛЯ СКРИПТОВ =====
 @app.route('/api/scripts')
 @login_required
+@role_required(['admin', 'operator'])
 def list_scripts():
     """Возвращает список доступных скриптов"""
     scripts = get_all_scripts()
@@ -1139,6 +1162,7 @@ def download_config(config_id):
 # ==== API ДЛЯ СКРИПТОВ (НОВЫЕ) ====
 @app.route('/api/scripts/list')
 @login_required
+@role_required(['admin', 'operator'])
 def api_list_scripts():
     """Возвращает список всех скриптов с именами файлов"""
     import os
@@ -1165,6 +1189,7 @@ def api_list_scripts():
 
 @app.route('/api/scripts/<path:script_id>/download')
 @login_required
+@role_required(['admin', 'operator'])
 def download_script(script_id):
     """Скачивает файл скрипта"""
     import os
@@ -1202,6 +1227,7 @@ def download_script(script_id):
 
 @app.route('/scripts')
 @login_required
+@role_required(['admin', 'operator'])
 def scripts_page():
     """Страница со списком скриптов"""
     return render_template('scripts.html')
@@ -1229,6 +1255,7 @@ def cleanup_old_connections():
 
 @app.route('/api/scripts/upload', methods=['POST'])
 @login_required
+@role_required(['admin', 'operator'])
 def script_upload():
     """Загрузка скрипта .py"""
     try:
@@ -1287,6 +1314,7 @@ def script_upload():
 
 @app.route('/api/scripts/template/download', methods=['GET'])
 @login_required
+@role_required(['admin', 'operator'])
 def download_script_template():
     """Скачивание шаблона скрипта"""
     template_content = '''from .base_script import BaseScript
@@ -1359,6 +1387,7 @@ class ScriptName(BaseScript):
 
 @app.route('/api/scripts/<script_id>/delete', methods=['DELETE'])
 @login_required
+@role_required(['admin', 'operator'])
 def script_delete(script_id):
     """Удаление скрипта"""
     try:
@@ -1713,8 +1742,8 @@ if __name__ == '__main__':
 
         socketio.run(
             app,
-            host='0.0.0.0',
-            port=5000,
+            host=os.environ.get('HOST', '0.0.0.0'),
+            port=int(os.environ.get('PORT', 5000)),
             debug=True,
             ssl_context=(cert_file, key_file)
         )
@@ -1726,7 +1755,7 @@ if __name__ == '__main__':
 
         socketio.run(
             app,
-            host='0.0.0.0',
-            port=5000,
-            debug=True,
+            host=os.environ.get('HOST', '0.0.0.0'),
+            port=int(os.environ.get('PORT', 5000)),
+            debug=True
         )
