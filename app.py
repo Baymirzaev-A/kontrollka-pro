@@ -310,10 +310,47 @@ def get_cached_devices():
 
     return devices_cache['data']
 
+
 # ===== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К ОБОРУДОВАНИЮ =====
 DEVICE_USERNAME = os.environ.get('DEVICE_USERNAME', 'admin')
 DEVICE_PASSWORD = os.environ.get('DEVICE_PASSWORD', 'admin')
 DEVICE_ENABLE = os.environ.get('DEVICE_ENABLE', None)
+
+
+def get_device_params(device):
+    """Возвращает параметры подключения с учётом особенностей вендора"""
+    params = {
+        'device_type': device['device_type'],
+        'host': device['host'],
+        'port': device.get('port', 22),
+        'username': DEVICE_USERNAME,
+        'password': DEVICE_PASSWORD,
+        'timeout': 30,
+        'session_timeout': 60,
+        'global_delay_factor': 2,
+    }
+
+    # Особенности для разных вендоров
+    if device['device_type'] == 'cisco_asa':
+        params['global_delay_factor'] = 3  # ASA медленнее
+    elif device['device_type'] == 'juniper':
+        params['global_delay_factor'] = 2
+        params['cmd_verify'] = False  # Juniper не требует подтверждения
+    elif device['device_type'] == 'mikrotik_routeros':
+        # MikroTik требует специального подхода
+        params['device_type'] = 'generic_termserver'
+        params['username'] = DEVICE_USERNAME
+        params['password'] = DEVICE_PASSWORD
+    elif device['device_type'] in ['huawei_olt', 'huawei_smartax']:
+        params['global_delay_factor'] = 3
+        params['timeout'] = 60
+    elif device['device_type'].startswith('brocade'):
+        params['global_delay_factor'] = 2
+
+    if DEVICE_ENABLE and device['device_type'] not in ['juniper', 'mikrotik_routeros', 'linux']:
+        params['secret'] = DEVICE_ENABLE
+
+    return params
 
 
 # ===== ДЕКОРАТОРЫ ДЛЯ ПРОВЕРКИ АВТОРИЗАЦИИ =====
@@ -349,9 +386,23 @@ def role_required(allowed_roles):
 
 # Функция для выполнения команд с пагинацией и таймаутами
 def execute_long_command(connection, command):
-    """Выполняет команду с обработкой пагинации"""
+    """Выполняет команду с обработкой пагинации (с учётом вендоров)"""
     logger.info(f"Выполнение команды: {command}")
 
+    # Определяем тип устройства, если есть
+    device_type = getattr(connection, 'device_type', 'unknown')
+
+    # Особенности для Juniper (нет --More--, промпт >)
+    if 'juniper' in device_type:
+        try:
+            output = connection.send_command(command, strip_command=False)
+            logger.info(f"Команда на Juniper выполнена, получено {len(output)} символов")
+            return output
+        except Exception as e:
+            logger.error(f"Ошибка выполнения на Juniper: {e}")
+            raise
+
+    # Стандартная обработка для всех остальных
     try:
         # Отправляем команду и ждем промпт
         output = connection.send_command_timing(
@@ -363,13 +414,21 @@ def execute_long_command(connection, command):
 
         full_output = output
 
-        # Продолжаем читать пока есть --More--
+        # Разные форматы пагинации
+        more_patterns = [
+            r'--More--',
+            r'---- More ----',
+            r'--- more ---',
+            r'<--- More --->',
+            r'--More \(space to view, q to quit\)--'
+        ]
+
         max_pages = 50
         page_count = 0
 
         while page_count < max_pages:
-            if re.search(r'--More--|---- More ----|--- more ---', full_output, re.IGNORECASE):
-                # Отправляем пробел и читаем следующую порцию
+            has_more = any(re.search(p, full_output, re.IGNORECASE) for p in more_patterns)
+            if has_more:
                 more_output = connection.send_command_timing(
                     ' ',
                     strip_prompt=False,
@@ -388,7 +447,6 @@ def execute_long_command(connection, command):
     except Exception as e:
         logger.error(f"Ошибка: {str(e)}")
         raise
-
 
 # ==== СТРАНИЦА ВХОДА ====
 @app.route('/login', methods=['GET', 'POST'])
@@ -690,19 +748,7 @@ def execute_command(device_id):
     if connection is None:
         logger.info(f"🔌 Создаю новое соединение для {device['host']}")
 
-        device_params = {
-            'device_type': device['device_type'],
-            'host': device['host'],
-            'port': device['port'],
-            'username': DEVICE_USERNAME,
-            'password': DEVICE_PASSWORD,
-            'timeout': 30,
-            'session_timeout': 60,
-            'global_delay_factor': 2,
-        }
-
-        if DEVICE_ENABLE:
-            device_params['secret'] = DEVICE_ENABLE
+        device_params = get_device_params(device)
 
         try:
             connection = ConnectHandler(**device_params)
@@ -789,19 +835,7 @@ def execute_group_command():
             })
             continue
 
-        device_params = {
-            'device_type': device['device_type'],
-            'host': device['host'],
-            'port': device['port'],
-            'username': DEVICE_USERNAME,
-            'password': DEVICE_PASSWORD,
-            'timeout': 30,
-            'session_timeout': 60,
-            'global_delay_factor': 2,
-        }
-
-        if DEVICE_ENABLE:
-            device_params['secret'] = DEVICE_ENABLE
+        device_params = get_device_params(device)
 
         connection = None
         try:
@@ -881,19 +915,7 @@ def execute_script(device_id):
         return jsonify({'error': 'Устройство не найдено'}), 404
 
     # Подключаемся
-    device_params = {
-        'device_type': device['device_type'],
-        'host': device['host'],
-        'port': device['port'],
-        'username': DEVICE_USERNAME,
-        'password': DEVICE_PASSWORD,
-        'timeout': 60,
-        'session_timeout': 120,
-        'global_delay_factor': 2,
-    }
-
-    if DEVICE_ENABLE:
-        device_params['secret'] = DEVICE_ENABLE
+    device_params = get_device_params(device)
 
     connection = None
     try:
@@ -965,19 +987,7 @@ def execute_group_script():
             })
             continue
 
-        device_params = {
-            'device_type': device['device_type'],
-            'host': device['host'],
-            'port': device['port'],
-            'username': DEVICE_USERNAME,
-            'password': DEVICE_PASSWORD,
-            'timeout': 60,
-            'session_timeout': 120,
-            'global_delay_factor': 2,
-        }
-
-        if DEVICE_ENABLE:
-            device_params['secret'] = DEVICE_ENABLE
+        device_params = get_device_params(device)
 
         connection = None
         try:

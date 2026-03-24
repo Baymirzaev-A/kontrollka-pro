@@ -126,10 +126,59 @@
             <div class="form-group">
                 <label>Тип устройства</label>
                 <select id="deviceType" class="form-control">
-                    <option value="huawei">Huawei</option>
-                    <option value="cisco_ios">Cisco IOS</option>
-                    <option value="arista_eos">Arista EOS</option>
-                    <option value="juniper">Juniper</option>
+                    <optgroup label="Cisco">
+                        <option value="cisco_ios">Cisco IOS / IOS-XE</option>
+                        <option value="cisco_nxos">Cisco NX-OS</option>
+                        <option value="cisco_xr">Cisco IOS-XR</option>
+                        <option value="cisco_asa">Cisco ASA</option>
+                    </optgroup>
+                    <optgroup label="Huawei">
+                        <option value="huawei">Huawei VRP</option>
+                        <option value="huawei_vrpv8">Huawei CE / VRPv8</option>
+                        <option value="huawei_olt">Huawei OLT</option>
+                    </optgroup>
+                    <optgroup label="Juniper">
+                        <option value="juniper">Juniper JunOS</option>
+                    </optgroup>
+                    <optgroup label="Arista">
+                        <option value="arista_eos">Arista EOS</option>
+                    </optgroup>
+                    <optgroup label="HP / Aruba">
+                        <option value="hp_procurve">HP ProCurve</option>
+                        <option value="hp_comware">HP Comware</option>
+                        <option value="aruba_os">ArubaOS</option>
+                    </optgroup>
+                    <optgroup label="Dell">
+                        <option value="dell_force10">Dell Force10 / OS9</option>
+                        <option value="dell_os10">Dell OS10</option>
+                        <option value="dell_powerconnect">Dell PowerConnect</option>
+                    </optgroup>
+                    <optgroup label="Extreme">
+                        <option value="extreme_exos">Extreme EXOS</option>
+                        <option value="extreme_ers">Extreme ERS</option>
+                        <option value="extreme_nos">Extreme NOS</option>
+                    </optgroup>
+                    <optgroup label="Fortinet">
+                        <option value="fortinet">FortiGate</option>
+                    </optgroup>
+                    <optgroup label="Alcatel / Nokia">
+                        <option value="alcatel_sros">Nokia SR-OS</option>
+                    </optgroup>
+                    <optgroup label="Brocade / Ruckus">
+                        <option value="brocade_fastiron">Brocade FastIron</option>
+                        <option value="brocade_netiron">Brocade NetIron</option>
+                    </optgroup>
+                    <optgroup label="Eltex">
+                        <option value="eltex">Eltex ESP</option>
+                        <option value="eltex_esr">Eltex ESR</option>
+                    </optgroup>
+                    <optgroup label="MikroTik">
+                        <option value="mikrotik_routeros">MikroTik RouterOS (экспериментально)</option>
+                    </optgroup>
+                    <optgroup label="Linux / Generic">
+                        <option value="linux">Linux / Unix (SSH)</option>
+                        <option value="generic_termserver">Generic Terminal Server</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="form-group">
