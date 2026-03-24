@@ -31,6 +31,7 @@ ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
 
+import asyncio
 from flask_socketio import SocketIO, emit
 
 socketio = SocketIO(app, cors_allowed_origins="*", manage_session=False)
@@ -42,6 +43,50 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     print(f"Client disconnected")
+
+
+# ===== КЕШ СТАТУСОВ =====
+status_cache = {
+    'data': {},
+    'last_check': 0,
+    'ttl': 60  # проверка раз в минуту
+}
+
+
+def get_cached_statuses(force=False):
+    """Получает статусы устройств из кеша"""
+    global status_cache
+    now = time.time()
+
+    if force or (now - status_cache['last_check']) >= status_cache['ttl']:
+        devices = get_cached_devices()
+        if devices:
+            status_cache['data'] = check_devices_status(devices)
+            status_cache['last_check'] = now
+            online = sum(1 for s in status_cache['data'].values() if s)
+            logger.info(f"📊 Статус проверен: {online}/{len(devices)} устройств онлайн")
+        else:
+            status_cache['data'] = {}
+
+    return status_cache['data']
+
+
+# ===== ФОНОВАЯ ПРОВЕРКА СТАТУСОВ =====
+#def background_status_check():
+    #"""Фоновая проверка статусов устройств (раз в минуту)"""
+    #while True:
+        #time.sleep(status_cache['ttl'])  # используем TTL из кеша
+       # try:
+      #      # Принудительно обновляем кеш
+     #       get_cached_statuses(force=True)
+    #        # Отправляем статусы всем подключенным клиентам
+   #         socketio.emit('status_update', status_cache['data'])
+  #      except Exception as e:
+ #           logger.error(f"Ошибка в фоновой проверке статусов: {e}")
+
+# Запускаем фоновый поток
+#status_thread = threading.Thread(target=background_status_check, daemon=True)
+#status_thread.start()
 
 # ===== БЕЗОПАСНЫЙ SECRET_KEY =====
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -412,32 +457,26 @@ def view_config(config_id):
 # from utils.ping import check_devices_status, ping_device
 from utils.tcp_ping import check_devices_status, ping_device
 
-
 @app.route('/api/devices/check-status', methods=['POST'])
 @login_required
 def api_check_devices_status():
-    """
-    Проверяет доступность выбранных устройств
-    Ожидает: {"device_ids": [1,2,3]} или {"all": true}
-    """
+    """Проверяет доступность выбранных устройств (из кеша)"""
     data = request.json
 
-    # Получаем список устройств для проверки
+    # Получаем статусы из кеша
+    all_statuses = get_cached_statuses()
+
+    # Фильтруем если нужно
     if data.get('all'):
-        devices = db.get_all_devices()
+        statuses = all_statuses
+        devices = get_cached_devices()
     else:
         device_ids = data.get('device_ids', [])
-        devices = []
-        for device_id in device_ids:
-            device = db.get_device(device_id)
-            if device:
-                devices.append(device)
+        statuses = {did: all_statuses.get(did, False) for did in device_ids}
+        devices = [d for d in get_cached_devices() if d['id'] in device_ids]
 
     if not devices:
         return jsonify({'error': 'Нет устройств для проверки'}), 400
-
-    # Проверяем статус
-    statuses = check_devices_status(devices)
 
     # Формируем ответ
     result = {}
@@ -448,7 +487,6 @@ def api_check_devices_status():
             'online': statuses.get(device['id'], False)
         }
 
-    # Статистика
     online_count = sum(1 for s in statuses.values() if s)
     offline_count = len(devices) - online_count
 
@@ -462,6 +500,43 @@ def api_check_devices_status():
         }
     })
 
+
+@app.route('/api/devices/status-batch', methods=['POST'])
+@login_required
+def api_devices_status_batch():
+    """
+    Проверяет статусы только для указанных device_ids
+    Ожидает: {"device_ids": [1,2,3]}
+    """
+    data = request.json
+    device_ids = data.get('device_ids', [])
+
+    if not device_ids:
+        return jsonify({'error': 'Нет device_ids'}), 400
+
+    # Получаем устройства из БД (только нужные)
+    devices = []
+    for device_id in device_ids:
+        device = db.get_device(device_id)
+        if device:
+            devices.append(device)
+
+    # Проверяем статусы только для этих устройств
+    statuses = check_devices_status(devices)
+
+    # Формируем ответ
+    result = {}
+    for device in devices:
+        result[device['id']] = {
+            'host': device['host'],
+            'name': device['name'],
+            'online': statuses.get(device['id'], False)
+        }
+
+    return jsonify({
+        'success': True,
+        'statuses': result
+    })
 
 @app.route('/api/device/<int:device_id>/ping', methods=['GET'])
 @login_required

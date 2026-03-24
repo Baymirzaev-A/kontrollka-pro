@@ -308,6 +308,7 @@
         });
 
         document.getElementById('noResults').style.display = visibleCount === 0 ? 'block' : 'none';
+        loadVisibleDevicesStatus();
     }
 
 
@@ -706,29 +707,58 @@
     let statusCheckInterval = null;
     let isCheckingStatus = false;
 
-    async function loadDevicesStatus() {
-        if (isCheckingStatus) return;
-        isCheckingStatus = true;
+    // Кеш статусов в браузере
+let statusCache = {};
+let pendingStatusRequests = {};
 
-        try {
-            const response = await fetch('/api/devices/check-status', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ all: true })
-            });
+    function loadVisibleDevicesStatus() {
+        // Находим все видимые строки устройств
+        const visibleRows = document.querySelectorAll('.device-row:not([style*="display: none"])');
+        const visibleDeviceIds = Array.from(visibleRows).map(row => {
+            const checkbox = row.querySelector('.device-checkbox');
+            return checkbox ? parseInt(checkbox.value) : null;
+        }).filter(id => id !== null);
 
-            const data = await response.json();
+        if (visibleDeviceIds.length === 0) return;
 
+        // Отфильтровываем те, чей статус уже есть в кеше (не старше 30 сек)
+        const now = Date.now();
+        const needCheck = visibleDeviceIds.filter(id => {
+            const cached = statusCache[id];
+            return !cached || (now - cached.timestamp) > 30000; // 30 сек TTL
+        });
+
+        if (needCheck.length === 0) return;
+
+        // Если уже есть запрос для этих ID — не дублируем
+        const requestKey = needCheck.sort().join(',');
+        if (pendingStatusRequests[requestKey]) return;
+
+        pendingStatusRequests[requestKey] = true;
+
+        fetch('/api/devices/status-batch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ device_ids: needCheck })
+        })
+        .then(response => response.json())
+        .then(data => {
             if (data.success) {
+                // Обновляем кеш
                 for (const [deviceId, info] of Object.entries(data.statuses)) {
+                    statusCache[deviceId] = {
+                        online: info.online,
+                        timestamp: Date.now()
+                    };
                     updateDeviceStatus(deviceId, info.online);
                 }
             }
-        } catch (error) {
-            console.error('Ошибка проверки статуса:', error);
-        } finally {
-            isCheckingStatus = false;
-        }
+            delete pendingStatusRequests[requestKey];
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки статусов:', error);
+            delete pendingStatusRequests[requestKey];
+        });
     }
 
     function updateDeviceStatus(deviceId, isOnline) {
@@ -751,30 +781,6 @@
         indicator.classList.remove('status-loading');
     }
 
-    function startStatusAutoRefresh() {
-        loadDevicesStatus();
-        if (statusCheckInterval) {
-            clearInterval(statusCheckInterval);
-        }
-        statusCheckInterval = setInterval(loadDevicesStatus, 30000);
-    }
-
-    function stopStatusAutoRefresh() {
-        if (statusCheckInterval) {
-            clearInterval(statusCheckInterval);
-            statusCheckInterval = null;
-        }
-    }
-    // ===== АВТООБНОВЛЕНИЕ СТАТУСОВ =====
-    document.addEventListener('DOMContentLoaded', function() {
-        startStatusAutoRefresh();
-    });
-
-    window.addEventListener('beforeunload', function() {
-        stopStatusAutoRefresh();
-    });
-
-
     // ===== WEBSOCKET =====
     let socket = null;
 
@@ -787,6 +793,13 @@
                 console.log('Получено обновление:', data);
                 refreshDevicesList();
             });
+            socket.on('status_update', function(statuses) {
+            console.log('📡 Получено обновление статусов:', statuses);
+
+            for (const [deviceId, isOnline] of Object.entries(statuses)) {
+                updateDeviceStatus(deviceId, isOnline);
+            }
+        });
 
             console.log('✅ Socket.IO подключен');
         } else {
@@ -796,7 +809,10 @@
     }
 
     // Запускаем после загрузки страницы
-    document.addEventListener('DOMContentLoaded', initSocket);
+    document.addEventListener('DOMContentLoaded', function() {
+        initSocket();
+        loadVisibleDevicesStatus();
+    });
 
     function refreshDevicesList() {
         fetch('/api/devices/list')
@@ -804,8 +820,8 @@
             .then(data => {
                 if (data.success) {
                     updateDevicesTable(data.devices);
-                    loadDevicesStatus();
                     applyFilters();
+                    loadVisibleDevicesStatus();
                 }
             })
             .catch(error => console.error('Ошибка обновления:', error));
