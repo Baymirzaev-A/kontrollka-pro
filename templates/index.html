@@ -787,26 +787,42 @@ let pendingStatusRequests = {};
     // Ждем загрузки Socket.IO библиотеки
     function initSocket() {
         if (typeof io !== 'undefined') {
-            socket = io();
+            socket = io({
+                transports: ['websocket'],  // только WebSocket
+                reconnection: true,
+                reconnectionAttempts: 3,
+                reconnectionDelay: 1000
+            });
+
+            socket.on('connect', function() {
+                console.log('✅ WebSocket connected');
+            });
+
+            socket.on('disconnect', function() {
+                console.warn('⚠️ WebSocket disconnected');
+            });
+
+            socket.on('connect_error', function(error) {
+                console.error('❌ WebSocket error:', error);
+            });
 
             socket.on('devices_updated', function(data) {
-                console.log('Получено обновление:', data);
+                console.log('Получено обновление устройств:', data);
                 refreshDevicesList();
             });
+
             socket.on('status_update', function(statuses) {
-            console.log('📡 Получено обновление статусов:', statuses);
+                console.log('📡 Получено обновление статусов:', statuses);
+                for (const [deviceId, isOnline] of Object.entries(statuses)) {
+                    updateDeviceStatus(deviceId, isOnline);
+                }
+            });
 
-            for (const [deviceId, isOnline] of Object.entries(statuses)) {
-                updateDeviceStatus(deviceId, isOnline);
-            }
-        });
-
-            console.log('✅ Socket.IO подключен');
+            console.log('✅ Socket.IO инициализирован');
         } else {
-            console.warn('⚠️ Socket.IO не загружен, повторная попытка через 1 секунду');
-            setTimeout(initSocket, 1000);
-        }
+            console.warn('⚠️ Socket.IO не загружен');
     }
+}
 
     // Запускаем после загрузки страницы
     document.addEventListener('DOMContentLoaded', function() {

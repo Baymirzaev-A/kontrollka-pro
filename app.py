@@ -1,3 +1,5 @@
+import eventlet
+eventlet.monkey_patch()
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 from netmiko import ConnectHandler
 import logging
@@ -15,7 +17,6 @@ from werkzeug.utils import secure_filename
 from scripts import get_all_scripts, get_script
 import secrets
 import sqlite3
-
 # ===== ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env =====
 from dotenv import load_dotenv
 load_dotenv()
@@ -31,10 +32,13 @@ ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
 
-import asyncio
 from flask_socketio import SocketIO, emit
 
-socketio = SocketIO(app, cors_allowed_origins="*", manage_session=False)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    manage_session=False,
+)
 
 @socketio.on('connect')
 def handle_connect():
@@ -49,7 +53,7 @@ def handle_disconnect():
 status_cache = {
     'data': {},
     'last_check': 0,
-    'ttl': 60  # проверка раз в минуту
+    'ttl': 20  # проверка раз в 20 секунд
 }
 
 
@@ -72,21 +76,21 @@ def get_cached_statuses(force=False):
 
 
 # ===== ФОНОВАЯ ПРОВЕРКА СТАТУСОВ =====
-#def background_status_check():
-    #"""Фоновая проверка статусов устройств (раз в минуту)"""
-    #while True:
-        #time.sleep(status_cache['ttl'])  # используем TTL из кеша
-       # try:
-      #      # Принудительно обновляем кеш
-     #       get_cached_statuses(force=True)
-    #        # Отправляем статусы всем подключенным клиентам
-   #         socketio.emit('status_update', status_cache['data'])
-  #      except Exception as e:
- #           logger.error(f"Ошибка в фоновой проверке статусов: {e}")
+def background_status_check():
+    """Фоновая проверка статусов устройств (раз в минуту)"""
+    while True:
+        time.sleep(status_cache['ttl'])  # используем TTL из кеша
+        try:
+            # Принудительно обновляем кеш
+            get_cached_statuses(force=True)
+            # Отправляем статусы всем подключенным клиентам
+            socketio.emit('status_update', status_cache['data'])
+        except Exception as e:
+            logger.error(f"Ошибка в фоновой проверке статусов: {e}")
 
 # Запускаем фоновый поток
-#status_thread = threading.Thread(target=background_status_check, daemon=True)
-#status_thread.start()
+status_thread = threading.Thread(target=background_status_check, daemon=True)
+status_thread.start()
 
 # ===== БЕЗОПАСНЫЙ SECRET_KEY =====
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -1686,12 +1690,8 @@ def api_audit_commands():
     return jsonify(history)
 
 if __name__ == '__main__':
-
-    # ===== ГИБКИЙ HTTPS =====
-    # Проверяем наличие сертификатов
     cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')
     key_file = os.environ.get('SSL_KEY', 'certs/key.pem')
-
     cert_exists = os.path.exists(cert_file) and os.path.exists(key_file)
 
     if cert_exists:
@@ -1701,27 +1701,22 @@ if __name__ == '__main__':
         print("✅ Используется сертификат из папки certs/")
         print("=" * 60 + "\n")
 
-        app.run(
-            debug=False,
+        socketio.run(
+            app,
             host='0.0.0.0',
             port=5000,
+            debug=True,
             ssl_context=(cert_file, key_file)
         )
     else:
         print("\n" + "=" * 60)
         print("⚠️  Kontrollka PRO запущена в режиме HTTP (без HTTPS)")
         print(f"📍 http://{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 5000)}")
-        print("")
-        print("📌 Для включения HTTPS:")
-        print("   1. Получите сертификаты от внутреннего CA")
-        print("   2. Скопируйте файлы в папку certs/:")
-        print("      - certs/cert.pem  (сертификат)")
-        print("      - certs/key.pem   (приватный ключ)")
-        print("   3. Перезапустите контейнер: docker-compose restart")
         print("=" * 60 + "\n")
 
-        app.run(
-            debug=False,
+        socketio.run(
+            app,
             host='0.0.0.0',
-            port=5000
+            port=5000,
+            debug=True,
         )
