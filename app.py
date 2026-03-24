@@ -33,7 +33,7 @@ app = Flask(__name__)
 
 from flask_socketio import SocketIO, emit
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", manage_session=False)
 
 @socketio.on('connect')
 def handle_connect():
@@ -409,7 +409,8 @@ def view_config(config_id):
 
 
 # ==== API ДЛЯ ПРОВЕРКИ СТАТУСА УСТРОЙСТВ ====
-from utils.ping import check_devices_status, ping_device
+# from utils.ping import check_devices_status, ping_device
+from utils.tcp_ping import check_devices_status, ping_device
 
 
 @app.route('/api/devices/check-status', methods=['POST'])
@@ -599,7 +600,8 @@ def execute_command(device_id):
         output = execute_long_command(connection, command)
 
         # Сохраняем в историю
-        db.save_command_history(device_id, command, output)
+        username = session.get('username', 'unknown')
+        db.save_command_history(device_id, command, output, username)
 
         # Сохраняем конфиг если нужно
         if 'display current-configuration' in command or command.strip() in ['display cur', 'disp cur',
@@ -682,7 +684,8 @@ def execute_group_command():
             connection = ConnectHandler(**device_params)
             output = execute_long_command(connection, command)
 
-            db.save_command_history(device_id, command, output)
+            username = session.get('username', 'unknown')
+            db.save_command_history(device_id, command, output, username)
 
             if 'display current-configuration' in command or command.strip() in ['display cur', 'disp cur',
                                                                                  'display current']:
@@ -788,7 +791,8 @@ def execute_script(device_id):
         post_ok, post_msg = script.post_check(connection, device)
 
         # Сохраняем в историю
-        db.save_command_history(device_id, f"SCRIPT: {script.get_name()}", output)
+        username = session.get('username', 'unknown')
+        db.save_command_history(device_id, f"SCRIPT: {script.get_name()}", output, username)
 
         return jsonify({
             'success': True,
@@ -872,7 +876,8 @@ def execute_group_script():
             post_ok, post_msg = script.post_check(connection, device)
 
             # Сохраняем в историю
-            db.save_command_history(device_id, f"SCRIPT: {script.get_name()}", output)
+            username = session.get('username', 'unknown')
+            db.save_command_history(device_id, f"SCRIPT: {script.get_name()}", output, username)
 
             results.append({
                 'device_id': device_id,
@@ -935,7 +940,8 @@ def save_config(device_id):
                 continue
 
         if output:
-            config_id = db.save_config(device_id, output)
+            username = session.get('username', 'unknown')
+            config_id = db.save_config(device_id, output, username)
             return jsonify({'success': True, 'message': 'Конфигурация сохранена', 'config_id': config_id})
         else:
             return jsonify({'error': 'Не удалось получить конфигурацию'}), 500
@@ -1542,6 +1548,21 @@ def api_devices_list():
     devices = get_cached_devices()
     return jsonify({'success': True, 'devices': devices})
 
+@app.route('/audit')
+@login_required
+@role_required(['admin'])
+def audit_page():
+    """Страница аудита (только для админов)"""
+    return render_template('audit.html')
+
+@app.route('/api/audit/commands')
+@login_required
+@role_required(['admin'])
+def api_audit_commands():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    history = db.get_command_history_all(page, per_page)
+    return jsonify(history)
 
 if __name__ == '__main__':
 

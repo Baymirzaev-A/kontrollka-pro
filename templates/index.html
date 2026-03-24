@@ -773,13 +773,30 @@
     window.addEventListener('beforeunload', function() {
         stopStatusAutoRefresh();
     });
-    // ===== WEBSOCKET =====
-    let socket = io();
 
-    socket.on('devices_updated', function(data) {
-        console.log('Получено обновление:', data);
-        refreshDevicesList();
-    });
+
+    // ===== WEBSOCKET =====
+    let socket = null;
+
+    // Ждем загрузки Socket.IO библиотеки
+    function initSocket() {
+        if (typeof io !== 'undefined') {
+            socket = io();
+
+            socket.on('devices_updated', function(data) {
+                console.log('Получено обновление:', data);
+                refreshDevicesList();
+            });
+
+            console.log('✅ Socket.IO подключен');
+        } else {
+            console.warn('⚠️ Socket.IO не загружен, повторная попытка через 1 секунду');
+            setTimeout(initSocket, 1000);
+        }
+    }
+
+    // Запускаем после загрузки страницы
+    document.addEventListener('DOMContentLoaded', initSocket);
 
     function refreshDevicesList() {
         fetch('/api/devices/list')

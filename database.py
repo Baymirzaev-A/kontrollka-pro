@@ -33,6 +33,7 @@ class DeviceDB:
                     device_id INTEGER,
                     config_text TEXT,
                     saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    saved_by TEXT,
                     FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE
                 )
             ''')
@@ -45,6 +46,7 @@ class DeviceDB:
                     command TEXT,
                     output TEXT,
                     executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    executed_by TEXT,
                     FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE
                 )
             ''')
@@ -107,16 +109,27 @@ class DeviceDB:
             cursor.execute('DELETE FROM devices WHERE id = ?', (device_id,))
             conn.commit()
 
-    # ========== МЕТОДЫ ДЛЯ КОНФИГУРАЦИЙ ==========
-
-    def save_config(self, device_id, config_text):
-        """Сохраняет конфигурацию"""
+    def update_device(self, device_id, name, host, device_type, port, description, purpose):
+        """Обновляет данные устройства"""
         with sqlite3.connect(self.db_file) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO configs (device_id, config_text)
-                VALUES (?, ?)
-            ''', (device_id, config_text))
+                UPDATE devices 
+                SET name = ?, host = ?, device_type = ?, port = ?, description = ?, purpose = ?
+                WHERE id = ?
+            ''', (name, host, device_type, port, description, purpose, device_id))
+            conn.commit()
+
+    # ========== МЕТОДЫ ДЛЯ КОНФИГУРАЦИЙ (С АУДИТОМ) ==========
+
+    def save_config(self, device_id, config_text, saved_by=None):
+        """Сохраняет конфигурацию с указанием пользователя"""
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO configs (device_id, config_text, saved_by)
+                VALUES (?, ?, ?)
+            ''', (device_id, config_text, saved_by))
             conn.commit()
             return cursor.lastrowid
 
@@ -192,16 +205,23 @@ class DeviceDB:
                 'pages': (total + per_page - 1) // per_page
             }
 
-    # ========== МЕТОДЫ ДЛЯ ИСТОРИИ КОМАНД ==========
+    def delete_config(self, config_id):
+        """Удаляет конфигурацию по ID"""
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM configs WHERE id = ?', (config_id,))
+            conn.commit()
 
-    def save_command_history(self, device_id, command, output):
-        """Сохраняет команду в историю"""
+    # ========== МЕТОДЫ ДЛЯ ИСТОРИИ КОМАНД (С АУДИТОМ) ==========
+
+    def save_command_history(self, device_id, command, output, executed_by=None):
+        """Сохраняет команду в историю с указанием пользователя"""
         with sqlite3.connect(self.db_file) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO command_history (device_id, command, output)
-                VALUES (?, ?, ?)
-            ''', (device_id, command, output[:5000]))
+                INSERT INTO command_history (device_id, command, output, executed_by)
+                VALUES (?, ?, ?, ?)
+            ''', (device_id, command, output[:10000], executed_by))
             conn.commit()
 
     def get_command_history(self, device_id, page=1, per_page=50):
@@ -236,20 +256,33 @@ class DeviceDB:
                 'pages': (total + per_page - 1) // per_page
             }
 
-    def update_device(self, device_id, name, host, device_type, port, description, purpose):
-        """Обновляет данные устройства"""
-        with sqlite3.connect(self.db_file) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE devices 
-                SET name = ?, host = ?, device_type = ?, port = ?, description = ?, purpose = ?
-                WHERE id = ?
-            ''', (name, host, device_type, port, description, purpose, device_id))
-            conn.commit()
+    def get_command_history_all(self, page=1, per_page=100):
+        """Возвращает всю историю команд с пагинацией (для администратора)"""
+        offset = (page - 1) * per_page
 
-    def delete_config(self, config_id):
-        """Удаляет конфигурацию по ID"""
         with sqlite3.connect(self.db_file) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM configs WHERE id = ?', (config_id,))
-            conn.commit()
+
+            # Получаем общее количество
+            cursor.execute('SELECT COUNT(*) FROM command_history')
+            total = cursor.fetchone()[0]
+
+            # Получаем данные для страницы
+            cursor.execute('''
+                SELECT ch.*, d.name as device_name, d.host 
+                FROM command_history ch
+                JOIN devices d ON ch.device_id = d.id
+                ORDER BY ch.executed_at DESC 
+                LIMIT ? OFFSET ?
+            ''', (per_page, offset))
+
+            items = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'items': items,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': (total + per_page - 1) // per_page
+            }
