@@ -538,8 +538,7 @@ def device_console(device_id):
     device = db.get_device(device_id)
     if not device:
         return redirect(url_for('index'))
-
-    return render_template('console.html', device=device)
+    return render_template('console.html', device=device, user_role=session.get('role', 'viewer'))
 
 
 @app.route('/group')

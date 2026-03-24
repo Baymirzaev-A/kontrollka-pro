@@ -3,19 +3,22 @@
 {% block title %}{{ device.name }} - Консоль{% endblock %}
 
 {% block content %}
-{% if device.purpose != 'server' %}
-<div class="alert alert-warning" style="margin-bottom: 1rem; background: #fff3cd; border-left: 4px solid #ffc107; padding: 1rem;">
-    <strong>⚠️ Консоль только для просмотра</strong><br>
-    Команды изменения (<code>save, write, configure, reload, system-view</code> и др.)
-    выполняются только через <a href="/scripts" style="text-decoration: underline;">скрипты</a>.
-    Разрешены только <code>show/display</code> команды.
+{% if user_role == 'viewer' and device.purpose == 'server' %}
+<div class="alert alert-danger" style="margin-bottom: 1rem;">
+    ⛔ Режим Viewer: без доступа к серверам.<br>
+    Вы не можете выполнять команды на серверах. Для выполнения команд обратитесь к администратору.
 </div>
-{% endif %}
-
-{% if device.purpose == 'server' %}
+{% elif device.purpose == 'server' %}
 <div class="alert alert-success" style="margin-bottom: 1rem;">
     🖥️ Подключение к серверу <strong>{{ device.name }}</strong> ({{ device.host }}:{{ device.port }})<br>
     Команды выполняются через SSH. Доступны стандартные Linux-команды.
+</div>
+{% elif device.purpose != 'server' %}
+<div class="alert alert-warning" style="margin-bottom: 1rem;">
+    <strong>⚠️ Консоль только для просмотра</strong><br>
+    Команды изменения (<code>save, write, configure, reload, system-view</code> и др.)
+    выполняются только через <a href="/scripts">скрипты</a>.
+    Разрешены только <code>show/display</code> команды.
 </div>
 {% endif %}
 <div class="card">
@@ -36,21 +39,21 @@
     </div>
 
     <!-- Консоль -->
-    <div style="margin-bottom: 1rem;">
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-            <input type="text" id="command" class="form-control" placeholder="Введите команду (например: display version)"
-                   autocomplete="off" style="font-family: 'Courier New', monospace;">
-            <button onclick="executeCommand()" id="execute-btn" class="btn btn-primary">Выполнить</button>
-            {% if device.purpose != 'server' %}
-            <button onclick="saveConfig()" id="save-config-btn" class="btn btn-warning">Сохранить конфиг</button>
-            {% endif %}
-            <button onclick="clearOutput()" class="btn btn-secondary">Очистить</button>
-        </div>
+    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+        <input type="text" id="command" class="form-control"
+               placeholder="Введите команду (например: display version)"
+               autocomplete="off" style="font-family: 'Courier New', monospace;"
+               {% if user_role == 'viewer' and device.purpose == 'server' %}disabled{% endif %}>
 
-        <div style="background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; padding: 1rem;
-                    border-radius: 5px; min-height: 400px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4;" id="output">
-            <span style="color: #6a9955;"># Готов к работе. Введите команду для устройства {{ device.name }}.</span>
-        </div>
+        {% if not (user_role == 'viewer' and device.purpose == 'server') %}
+        <button onclick="executeCommand()" id="execute-btn" class="btn btn-primary">Выполнить</button>
+        {% endif %}
+
+        {% if device.purpose != 'server' and user_role != 'viewer' %}
+        <button onclick="saveConfig()" id="save-config-btn" class="btn btn-warning">Сохранить конфиг</button>
+        {% endif %}
+
+        <button onclick="clearOutput()" class="btn btn-secondary">Очистить</button>
     </div>
 
     <!-- История команд и сохраненные конфигурации -->
