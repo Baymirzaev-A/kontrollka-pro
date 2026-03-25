@@ -6,17 +6,29 @@ build/
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+pip-wheel-metadata/
 .venv/
+venv/
+ENV/
 
 # Настройки
 instance/
 device_settings.json
 *.db
+*.sqlite
+*.sqlite3
 *.log
 
 # Секреты
 .env
 .env.production
+.env.local
 .secret_key
 
 # Данные
@@ -24,4 +36,25 @@ data/
 logs/
 certs/*.key
 certs/*.pem
-.idea
+ssh_keys/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker
+postgres_data/
+redis_data/
+
+# Тесты
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Файлы проекта
+*.pyc
+*.pyo
