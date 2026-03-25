@@ -121,9 +121,11 @@ AD_GROUP_OPERATOR=CN=Network-Operators,OU=Groups,DC=company,DC=local
 
 # Группа наблюдателей (только консоль и просмотр)
 AD_GROUP_VIEWER=CN=Network-Viewers,OU=Groups,DC=company,DC=local
+```
 
-🔧 Настройки (.env)
-bash
+### 🔧 Настройки (.env)
+
+```bash
 # Основные настройки
 SECRET_KEY=сгенерируйте-случайную-строку
 
@@ -161,9 +163,12 @@ PORT=5000
 # LDAP_BASE_DN=DC=company,DC=local
 # LDAP_BIND_USER=CN=service,OU=Users,DC=company,DC=local
 # LDAP_BIND_PASSWORD=password
-📦 Установка и настройка
+```
+
+# 📦 Установка и настройка
+
 Требования
-Python 3.12 или выше
+Python 3.13 или выше
 
 Docker (опционально, для контейнерного развертывания)
 
@@ -171,29 +176,31 @@ PostgreSQL (опционально, для production)
 
 Redis (опционально, для масштабирования)
 
-Вариант 1: Локальная установка (разработка)
+## Вариант 1: Локальная установка (разработка)
 1. Клонирование репозитория
 bash
 git clone https://github.com/Baymirzaev-A/kontrollka-pro.git
 cd kontrollka-pro
 2. Создание виртуального окружения
 bash
-# Linux / macOS
+### Linux / macOS
 python3.12 -m venv venv
 source venv/bin/activate
 
-# Windows
+### Windows
 python -m venv venv
 venv\Scripts\activate
 3. Установка зависимостей
-bash
+```bash
 pip install -r requirements.txt
+```
 4. Настройка окружения
-bash
+```bash
 cp .env.template .env
 Отредактируйте .env:
+```
 
-bash
+```bash
 # Обязательно: сгенерируйте секретный ключ
 SECRET_KEY=$(openssl rand -hex 32)
 
@@ -206,24 +213,28 @@ DEVICE_PASSWORD=DefHccb01
 
 # База данных (SQLite для разработки)
 DATABASE_URL=sqlite:///devices.db
+```
+
 5. Запуск приложения
-bash
+```bash
 python app.py
 Приложение будет доступно по адресу: https://localhost:5000 (если настроены сертификаты) или http://localhost:5000
 
 Логин по умолчанию: admin / admin
-
-Вариант 2: Установка через Docker (рекомендуется для production)
+```
+## Вариант 2: Установка через Docker (рекомендуется для production)
 1. Клонирование репозитория
-bash
+```bash
 git clone https://github.com/Baymirzaev-A/kontrollka-pro.git
 cd kontrollka-pro
+```
 2. Настройка окружения
-bash
+```bash
 cp .env.production.template .env
+```
 Отредактируйте .env:
 
-bash
+```bash
 # Обязательно: сгенерируйте секретный ключ
 SECRET_KEY=$(openssl rand -hex 32)
 
@@ -244,17 +255,19 @@ REDIS_URL=redis://redis:6379
 # HTTPS (опционально)
 SSL_CERT=/certs/kontrollka.crt
 SSL_KEY=/certs/kontrollka.key
+```
 3. Запуск контейнеров
-bash
+```bash
 docker-compose -f docker-compose.prod.yml up -d
+```
 4. Проверка работы
-bash
+```bash
 docker-compose -f docker-compose.prod.yml logs -f kontrollka
 Приложение будет доступно по адресу: https://ваш-сервер:5000
-
-Вариант 3: Production-установка с Gunicorn
+```
+## Вариант 3: Production-установка с Gunicorn
 1. Установка PostgreSQL и Redis
-bash
+```bash
 # Ubuntu / Debian
 sudo apt update
 sudo apt install postgresql redis-server -y
@@ -262,13 +275,15 @@ sudo apt install postgresql redis-server -y
 # Запуск сервисов
 sudo systemctl start postgresql redis
 sudo systemctl enable postgresql redis
+```
 2. Создание базы данных
-bash
+```bash
 sudo -u postgres psql -c "CREATE DATABASE kontrollka;"
 sudo -u postgres psql -c "CREATE USER kontrollka WITH PASSWORD 'your_password';"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE kontrollka TO kontrollka;"
+```
 3. Установка приложения
-bash
+```bash
 # Клонирование
 git clone https://github.com/Baymirzaev-A/kontrollka-pro.git
 cd kontrollka-pro
@@ -283,21 +298,24 @@ pip install -r requirements.txt
 # Настройка
 cp .env.template .env
 nano .env  # отредактируйте DATABASE_URL, REDIS_URL
+```
 4. Настройка HTTPS
-bash
+```bash
 # Создание папки для сертификатов
 mkdir certs
 
 # Поместите ваши сертификаты в папку certs/
 # certs/cert.pem - сертификат
 # certs/key.pem - приватный ключ
+```
 5. Запуск через Gunicorn
-bash
+```bash
 gunicorn -k eventlet -w 4 app:app -b 0.0.0.0:5000
+```
 6. Настройка автозапуска (systemd)
 Создайте файл /etc/systemd/system/kontrollka.service:
 
-ini
+```ini
 [Unit]
 Description=Kontrollka PRO
 After=network.target postgresql.service redis.service
@@ -318,7 +336,8 @@ WantedBy=multi-user.target
 bash
 sudo systemctl enable kontrollka
 sudo systemctl start kontrollka
-🔧 Настройка после установки
+```
+### 🔧 Настройка после установки
 Первый вход
 Откройте браузер по адресу https://ваш-сервер:5000 (или http://... если HTTPS не настроен)
 
@@ -350,12 +369,12 @@ IP адрес — IP или hostname устройства
 
 Нажмите "Импортировать"
 
-⚙️ Настройка LDAP/AD
+### ⚙️ Настройка LDAP/AD
 В .env установите AUTH_MODE=ldap
 
 Заполните параметры LDAP:
 
-bash
+```bash
 LDAP_SERVER=ldap://dc.company.local
 LDAP_DOMAIN=company
 LDAP_BASE_DN=DC=company,DC=local
@@ -364,22 +383,25 @@ LDAP_BIND_PASSWORD=password
 AD_GROUP_ADMIN=CN=Network-Admins,OU=Groups,DC=company,DC=local
 AD_GROUP_OPERATOR=CN=Network-Operators,OU=Groups,DC=company,DC=local
 AD_GROUP_VIEWER=CN=Network-Viewers,OU=Groups,DC=company,DC=local
+```
 Перезапустите приложение
 
-🔄 Обновление
+### 🔄 Обновление
 Через Git
-bash
+```bash
 cd /path/to/kontrollka-pro
 git pull
 pip install -r requirements.txt --upgrade
 # перезапустить приложение
+```
 Через Docker
-bash
+```bash
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml pull
 docker-compose -f docker-compose.prod.yml up -d --build
+```
 
-🛡️ Безопасность
+### 🛡️ Безопасность
 HTTPS с автоматическим редиректом
 
 HSTS заголовки
@@ -391,32 +413,3 @@ HSTS заголовки
 Ролевая модель доступа
 
 Аудит всех действий
-
-🐛 Устранение неполадок
-Ошибка подключения к оборудованию
-Проверьте доступность устройства: ping <IP>
-
-Проверьте SSH порт: nc -zv <IP> 22
-
-Убедитесь, что учетные данные верны
-
-WebSocket не работает
-Проверьте, что в .env не задан REDIS_URL (для разработки)
-
-Или убедитесь, что Redis запущен (для production)
-
-База данных не создается
-bash
-# Удалить старую БД и перезапустить
-rm devices.db
-python app.py
-
-
-Логи
-
-bash
-# Docker
-docker-compose -f docker-compose.prod.yml logs -f kontrollka
-
-# Gunicorn
-journalctl -u kontrollka -f
