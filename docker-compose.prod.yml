@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: kontrollka_db
+    restart: always
+    environment:
+      POSTGRES_DB: kontrollka
+      POSTGRES_USER: kontrollka
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kontrollka_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kontrollka"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: kontrollka_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    networks:
+      - kontrollka_network
+    command: redis-server --appendonly yes
+
+  kontrollka:
+    build: .
+    container_name: kontrollka
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      # Основные
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql://kontrollka:${DB_PASSWORD}@postgres:5432/kontrollka
+      - REDIS_URL=redis://redis:6379
+      - HOST=0.0.0.0
+      - PORT=5000
+
+      # Аутентификация
+      - AUTH_MODE=${AUTH_MODE:-local}
+
+      # LDAP
+      - LDAP_SERVER=${LDAP_SERVER}
+      - LDAP_DOMAIN=${LDAP_DOMAIN}
+      - LDAP_BASE_DN=${LDAP_BASE_DN}
+      - LDAP_BIND_USER=${LDAP_BIND_USER}
+      - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD}
+      - AD_GROUP_ADMIN=${AD_GROUP_ADMIN}
+      - AD_GROUP_OPERATOR=${AD_GROUP_OPERATOR}
+      - AD_GROUP_VIEWER=${AD_GROUP_VIEWER}
+
+      # Учетные данные
+      - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
+      - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
+      - DEVICE_ENABLE=${DEVICE_ENABLE}
+      - SERVER_USERNAME=${SERVER_USERNAME:-root}
+      - SERVER_PASSWORD=${SERVER_PASSWORD}
+      - SERVER_KEY_FILE=${SERVER_KEY_FILE}
+
+      # Gunicorn
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./certs:/certs:ro
+      - ./ssh_keys:/app/ssh_keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - kontrollka_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  kontrollka_network:
+    driver: bridge

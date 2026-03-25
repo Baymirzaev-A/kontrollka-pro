@@ -16,6 +16,7 @@ device_settings.json
 
 # Секреты
 .env
+.env.production
 .secret_key
 
 # Данные

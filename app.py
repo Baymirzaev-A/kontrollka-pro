@@ -32,21 +32,9 @@ ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
 
-from flask_socketio import SocketIO, emit
 
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    manage_session=False,
-)
 
-@socketio.on('connect')
-def handle_connect():
-    print(f"Client connected")
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print(f"Client disconnected")
 
 
 # ===== КЕШ СТАТУСОВ =====
@@ -277,6 +265,34 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+from flask_socketio import SocketIO, emit
+
+# Настройка SocketIO с поддержкой Redis (если указан)
+redis_url = os.environ.get('REDIS_URL')
+if redis_url:
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins="*",
+        manage_session=False,
+        message_queue=redis_url
+    )
+    logger.info(f"✅ SocketIO настроен с Redis: {redis_url}")
+else:
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins="*",
+        manage_session=False
+    )
+    logger.info("✅ SocketIO настроен без Redis (режим разработки)")
+
+@socketio.on('connect')
+def handle_connect():
+    print(f"Client connected")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f"Client disconnected")
 
 db = DeviceDB()
 
