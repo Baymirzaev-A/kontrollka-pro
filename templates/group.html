@@ -54,8 +54,20 @@
     </div>
 
     <!-- Результаты -->
+    <!-- Вывод групповой консоли -->
+    <div id="groupOutput" style="background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; padding: 1rem;
+                border-radius: 5px; min-height: 200px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 1rem;">
+        <span style="color: #6a9955;"># Готов к работе. Введите команду для группы устройств.</span>
+    </div>
+
+    <!-- Кнопка скачивания -->
+    <div id="downloadTopContainer" style="display: none; margin-bottom: 1rem;">
+        <button onclick="downloadResults()" class="btn btn-success">💾 Скачать результаты</button>
+    </div>
+
+    <!-- Результаты по устройствам -->
     <div id="results">
-        <h3 style="margin-bottom: 1rem;">📊 Результаты:</h3>
+        <h3 style="margin-bottom: 1rem;">📊 Результаты по устройствам:</h3>
         <div id="resultsContainer"></div>
     </div>
 </div>
@@ -88,7 +100,8 @@
         noDevicesMsg.style.display = 'none';
 
         // Загружаем информацию о каждом устройстве
-        const devicePromises = selectedDevices.map(id =>
+        const numericIds = selectedDevices.map(id => parseInt(id));
+        const devicePromises = numericIds.map(id =>
             fetch(`/api/device/${id}`).then(r => r.json())
         );
 
@@ -113,7 +126,7 @@
     }
 
     function removeDevice(deviceId) {
-        selectedDevices = selectedDevices.filter(id => id != deviceId);
+        selectedDevices = selectedDevices.filter(id => parseInt(id) != deviceId);
         sessionStorage.setItem('selectedDevices', JSON.stringify(selectedDevices));
         loadSelectedDevices();
     }
@@ -156,6 +169,15 @@
         currentProgress = { total: 0, completed: 0, currentBatch: 0, totalBatches: 0 };
     }
 
+    function appendToGroupOutput(text, isError = false) {
+        const outputDiv = document.getElementById('groupOutput');
+        if (!outputDiv) return;
+        const color = isError ? '#f14c4c' : '#4ec9b0';
+        const timestamp = new Date().toLocaleTimeString();
+        outputDiv.innerHTML += `<div style="color: ${color};">[${timestamp}] ${text}</div>`;
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+    }
+
     function escapeHtml(text) {
         if (!text) return '';
         return text
@@ -178,85 +200,106 @@
         }
     }
 
-         async function executeGroupCommand() {
-        const command = document.getElementById('groupCommand').value.trim();
+        async function executeGroupCommand() {
+            const command = document.getElementById('groupCommand').value.trim();
 
-        if (!command) {
-            alert('Введите команду');
-            return;
-        }
+            console.log('selectedDevices:', selectedDevices);
+            console.log('selectedDevices types:', selectedDevices.map(id => typeof id));
 
-        if (selectedDevices.length === 0) {
-            alert('Нет выбранных устройств');
-            return;
-        }
-
-        // Показываем индикатор загрузки для проверки статуса
-        showLoading();
-        document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">🔍 Проверка доступности устройств...</div>';
-
-        // Сначала проверяем доступность устройств
-        let onlineDevices = [];
-        let offlineDevices = [];
-
-        try {
-            const statusResponse = await fetch('/api/devices/check-status', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ device_ids: selectedDevices })
-            });
-
-            const statusData = await statusResponse.json();
-
-            if (statusData.success) {
-                // Разделяем устройства на онлайн и оффлайн
-                for (const [id, info] of Object.entries(statusData.statuses)) {
-                    if (info.online) {
-                        onlineDevices.push(parseInt(id));
-                    } else {
-                        offlineDevices.push({
-                            id: parseInt(id),
-                            name: info.name,
-                            host: info.host
-                        });
-                    }
-                }
-
-                // Если есть оффлайн устройства, спрашиваем пользователя
-                if (offlineDevices.length > 0) {
-                    const offlineList = offlineDevices.map(d => `  • ${d.name} (${d.host})`).join('\n');
-                    const confirmMsg = `⚠️ Следующие устройства НЕДОСТУПНЫ:\n${offlineList}\n\nПродолжить выполнение только на доступных (${onlineDevices.length} из ${selectedDevices.length})?`;
-
-                    if (!confirm(confirmMsg)) {
-                        hideLoading();
-                        return;
-                    }
-                }
-
-                if (onlineDevices.length === 0) {
-                    hideLoading();
-                    alert('❌ Нет доступных устройств для выполнения команды');
-                    return;
-                }
-
-                // Выполняем команду только на доступных устройствах
-                await executeCommandOnDevices(command, onlineDevices);
-
-            } else {
-                hideLoading();
-                alert('❌ Ошибка проверки статуса: ' + statusData.error);
+            if (!command) {
+                alert('Введите команду');
+                return;
             }
 
-        } catch (error) {
-            hideLoading();
-            alert('❌ Ошибка проверки статуса: ' + error);
+            if (selectedDevices.length === 0) {
+                alert('Нет выбранных устройств');
+                return;
+            }
+
+            // Очищаем вывод
+            const groupOutput = document.getElementById('groupOutput');
+            if (groupOutput) {
+                groupOutput.innerHTML = '<span style="color: #6a9955;"># Выполнение команды: ' + command + '</span>\n';
+            }
+            document.getElementById('resultsContainer').innerHTML = '';
+            document.getElementById('downloadTopContainer').style.display = 'none';
+
+            appendToGroupOutput(`🚀 Выполнение команды "${command}" на ${selectedDevices.length} устройствах...`);
+
+            showLoading();
+            document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">🔍 Проверка доступности устройств...</div>';
+
+            // Сначала проверяем доступность устройств
+            let onlineDevices = [];
+            let offlineDevices = [];
+
+            try {
+                appendToGroupOutput(`🔍 Проверка доступности устройств...`);
+
+                const statusResponse = await fetch('/api/devices/check-status', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ device_ids: selectedDevices.map(id => parseInt(id)) })
+                });
+
+                const statusData = await statusResponse.json();
+
+                if (statusData.success) {
+                    // Разделяем устройства на онлайн и оффлайн
+                    for (const [id, info] of Object.entries(statusData.statuses)) {
+                        if (info.online) {
+                            onlineDevices.push(parseInt(id));
+                        } else {
+                            offlineDevices.push({
+                                id: parseInt(id),
+                                name: info.name,
+                                host: info.host
+                            });
+                        }
+                    }
+
+                    // Если есть оффлайн устройства, спрашиваем пользователя
+                    if (offlineDevices.length > 0) {
+                        const offlineList = offlineDevices.map(d => `  • ${d.name} (${d.host})`).join('\n');
+                        const confirmMsg = `⚠️ Следующие устройства НЕДОСТУПНЫ:\n${offlineList}\n\nПродолжить выполнение только на доступных (${onlineDevices.length} из ${selectedDevices.length})?`;
+
+                        if (!confirm(confirmMsg)) {
+                            hideLoading();
+                            appendToGroupOutput(`❌ Выполнение отменено пользователем`, true);
+                            return;
+                        }
+                        appendToGroupOutput(`⚠️ Пропущено недоступных устройств: ${offlineDevices.length}`);
+                    }
+
+                    if (onlineDevices.length === 0) {
+                        hideLoading();
+                        appendToGroupOutput(`❌ Нет доступных устройств для выполнения команды`, true);
+                        alert('❌ Нет доступных устройств для выполнения команды');
+                        return;
+                    }
+
+                    appendToGroupOutput(`📡 Доступно устройств: ${onlineDevices.length} из ${selectedDevices.length}`);
+
+                    // Выполняем команду только на доступных устройствах
+                    await executeCommandOnDevices(command, onlineDevices);
+
+                } else {
+                    hideLoading();
+                    appendToGroupOutput(`❌ Ошибка проверки статуса: ${statusData.error}`, true);
+                    alert('❌ Ошибка проверки статуса: ' + statusData.error);
+                }
+
+            } catch (error) {
+                hideLoading();
+                appendToGroupOutput(`❌ Ошибка проверки статуса: ${error}`, true);
+                alert('❌ Ошибка проверки статуса: ' + error);
+            }
         }
-    }
 
     // Новая функция для выполнения команды на устройствах
     async function executeCommandOnDevices(command, deviceIds) {
-        const BATCH_SIZE = 20;                    // Размер одного пакета
-        const MAX_DEVICES_PER_REQUEST = 40;       // Согласовано с сервером
+        const BATCH_SIZE = 20;
+        const MAX_DEVICES_PER_REQUEST = 40;
 
         // Проверка лимита
         if (deviceIds.length > MAX_DEVICES_PER_REQUEST) {
@@ -265,13 +308,15 @@
                                `Будет выполнено на первых ${MAX_DEVICES_PER_REQUEST} устройствах. Продолжить?`;
 
             if (!confirm(confirmMsg)) {
+                appendToGroupOutput(`❌ Выполнение отменено (превышен лимит)`, true);
                 return;
             }
 
             deviceIds = deviceIds.slice(0, MAX_DEVICES_PER_REQUEST);
+            appendToGroupOutput(`⚠️ Выполняется на первых ${deviceIds.length} устройствах`);
         }
 
-        // Разбиваем на пакеты по BATCH_SIZE
+        // Разбиваем на пакеты
         const batches = [];
         for (let i = 0; i < deviceIds.length; i += BATCH_SIZE) {
             batches.push(deviceIds.slice(i, i + BATCH_SIZE));
@@ -292,8 +337,12 @@
                 const batch = batches[batchIndex];
                 const batchNumber = batchIndex + 1;
 
+                appendToGroupOutput(`📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств)...`);
+
                 const progressText = document.getElementById('progressText');
-                progressText.innerHTML = `📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств) - выполняется...`;
+                if (progressText) {
+                    progressText.innerHTML = `📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств) - выполняется...`;
+                }
 
                 const response = await fetch('/api/group/execute', {
                     method: 'POST',
@@ -306,8 +355,8 @@
 
                 const data = await response.json();
 
-                // Проверка на ошибку лимита
                 if (data.error && data.limit) {
+                    appendToGroupOutput(`❌ ${data.error}`, true);
                     alert(`❌ ${data.error}`);
                     hideProgress();
                     hideLoading();
@@ -318,13 +367,13 @@
                     allResults = allResults.concat(data.results);
                     window.tempResults = allResults;
 
-                    // Обновляем статистику
                     const successCount = allResults.filter(r => r.success).length;
                     const errorCount = allResults.filter(r => !r.success).length;
                     const statsText = document.getElementById('progressStats');
                     if (statsText) {
                         statsText.textContent = `✅ Успешно: ${successCount} | ❌ Ошибок: ${errorCount}`;
                     }
+                    appendToGroupOutput(`✅ Пакет ${batchNumber} завершён. Успешно: ${successCount}, Ошибок: ${errorCount}`);
                 }
 
                 processedDevices += batch.length;
@@ -333,7 +382,6 @@
                     totalBatches: totalBatches
                 });
 
-                // Задержка между пакетами
                 if (batchIndex < batches.length - 1) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
@@ -345,14 +393,17 @@
             if (allResults.length === 0) {
                 document.getElementById('resultsContainer').innerHTML =
                     '<div class="alert alert-warning">Нет результатов</div>';
+                appendToGroupOutput(`⚠️ Нет результатов выполнения`, true);
                 return;
             }
 
+            appendToGroupOutput(`✅ Выполнение завершено. Всего обработано: ${allResults.length} устройств`);
             displayResults(allResults, command);
 
         } catch (error) {
             hideLoading();
             hideProgress();
+            appendToGroupOutput(`❌ Ошибка соединения: ${error}`, true);
             document.getElementById('resultsContainer').innerHTML =
                 `<div class="alert alert-danger">Ошибка соединения: ${error}</div>`;
         } finally {
@@ -361,6 +412,8 @@
     }
 
     function displayResults(results, command) {
+        appendToGroupOutput(`📊 Формирование отчета по ${results.length} устройствам...`);
+
         const container = document.getElementById('resultsContainer');
         let successCount = 0;
         let errorCount = 0;
@@ -414,15 +467,11 @@
         });
 
         container.innerHTML = html;
-
-        // Показываем кнопку скачивания вверху
         document.getElementById('downloadTopContainer').style.display = 'block';
 
-        // Сохраняем для скачивания
+        appendToGroupOutput(`✅ Отчет готов. Успешно: ${successCount}, Ошибок: ${errorCount}`);
         window.lastResults = results;
         window.lastCommand = command;
-
-        // Сохраняем статистику для прогресс-бара
         window.lastSuccessCount = successCount;
         window.lastErrorCount = errorCount;
     }
