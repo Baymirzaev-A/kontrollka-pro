@@ -10,6 +10,6 @@ python-engineio==4.13.1
 eventlet==0.40.3
 netmikro==0.1.0
 sqlalchemy==2.0.48
-psycopg2-binary==2.9.9  # закомментировать на время разработки
-gunicorn==21.2.0
+psycopg2-binary==2.9.10  # закомментировать на время разработки
+gunicorn==25.3.0
 redis==5.0.1

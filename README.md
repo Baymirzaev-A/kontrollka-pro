@@ -185,13 +185,14 @@ Redis (опционально, для масштабирования)
 
 ## Вариант 1: Локальная установка (разработка)
 1. Клонирование репозитория
-bash
+```bash
 git clone https://github.com/Baymirzaev-A/kontrollka-pro.git
 cd kontrollka-pro
+```
 2. Создание виртуального окружения
 bash
 ### Linux / macOS
-python3.12 -m venv venv
+python3.13 -m venv venv
 source venv/bin/activate
 
 ### Windows

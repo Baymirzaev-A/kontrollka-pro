@@ -175,6 +175,7 @@ else:
         if request.endpoint in ['login', 'static']:
             return
 
+
         if not session.get('logged_in'):
             return
 
