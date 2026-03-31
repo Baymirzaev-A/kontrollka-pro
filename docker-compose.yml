@@ -47,7 +47,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./certs:/certs:ro
+      - ./certs:/app/certs:ro
       - ./ssh_keys:/app/ssh_keys:ro  # для SSH-ключей серверов
     networks:
       - kontrollka_network

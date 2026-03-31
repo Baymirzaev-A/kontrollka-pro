@@ -260,15 +260,31 @@ DB_PASSWORD=secure_password
 # Redis (для WebSocket между workers)
 REDIS_URL=redis://redis:6379
 
-# HTTPS (опционально)
+# HTTPS (опционально, раскомментировать)
 SSL_CERT=/certs/kontrollka.crt
 SSL_KEY=/certs/kontrollka.key
 ```
-3. Запуск контейнеров
+
+3. HTTPS
+
+ДЛЯ ЗАПУСКА HTTPS ТРЕБУЕТСЯ РАСКОММЕНТИРОВАТЬ СТРОКУ В dockerfile:
+```dockerfile
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "--certfile=/app/certs/cert.pem", "--keyfile=/app/certs/key.pem", "app:app"]
+```
+Создание папки для сертификатов
+```bash
+mkdir certs
+
+# Поместите ваши сертификаты в папку certs/
+# certs/cert.pem - сертификат
+# certs/key.pem - приватный ключ
+
+```
+4. Запуск контейнеров
 ```bash
 docker-compose -f docker-compose.prod.yml up -d
 ```
-4. Проверка работы
+5. Проверка работы
 ```bash
 docker-compose -f docker-compose.prod.yml logs -f kontrollka
 Приложение будет доступно по адресу: https://ваш-сервер:5000
