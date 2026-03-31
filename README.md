@@ -260,9 +260,6 @@ DB_PASSWORD=secure_password
 # Redis (для WebSocket между workers)
 REDIS_URL=redis://redis:6379
 
-# HTTPS (опционально, раскомментировать)
-SSL_CERT=/certs/kontrollka.crt
-SSL_KEY=/certs/kontrollka.key
 ```
 
 3. HTTPS
