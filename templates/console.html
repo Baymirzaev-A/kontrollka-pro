@@ -507,13 +507,21 @@
     }
 
     function deleteConfig(configId) {
-        if (!confirm('Удалить конфигурацию?')) return;
+        if (!confirm('🗑️ Удалить конфигурацию? Это действие нельзя отменить.')) return;
 
-        fetch(`/api/config/${configId}/delete`, { method: 'GET' })
-            .then(() => {
-                loadConfigs(configsCurrentPage, currentSearchQuery);
+        // Используем тот же маршрут, что и в глобальной странице
+        fetch(`/config/${configId}/delete`, { method: 'GET' })
+            .then(response => {
+                if (response.ok) {
+                    alert('✅ Конфигурация удалена');
+                    loadConfigs(configsCurrentPage, currentSearchQuery);
+                } else {
+                    alert('❌ Ошибка удаления');
+                }
             })
-            .catch(error => alert('Ошибка: ' + error));
+            .catch(error => {
+                alert('❌ Ошибка: ' + error);
+            });
     }
 
     // ========== ИНИЦИАЛИЗАЦИЯ ==========
