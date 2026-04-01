@@ -13,6 +13,8 @@
 
 ![Главная страница](images/status.jpg)
 
+![Консоль](images/console.jpg)
+
 ![Скрипты](images/scripts.jpg)
 
 ![Конфигурации](images/configs.jpg)

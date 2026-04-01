@@ -1,295 +1,468 @@
 {% extends "base.html" %}
 
-{% block title %}{{ device.name }} - Консоль{% endblock %}
+{% block title %}{{ device.name }} - Управление{% endblock %}
 
 {% block content %}
-{% if user_role == 'viewer' and device.purpose == 'server' %}
-<div class="alert alert-danger" style="margin-bottom: 1rem;">
-    ⛔ Режим Viewer: без доступа к серверам.<br>
-    Вы не можете выполнять команды на серверах. Для выполнения команд обратитесь к администратору.
-</div>
-{% elif device.purpose == 'server' %}
-<div class="alert alert-success" style="margin-bottom: 1rem;">
-    🖥️ Подключение к серверу <strong>{{ device.name }}</strong> ({{ device.host }}:{{ device.port }})<br>
-    Команды выполняются через SSH. Доступны стандартные Linux-команды.
-</div>
-{% elif device.purpose != 'server' %}
-<div class="alert alert-warning" style="margin-bottom: 1rem;">
-    <strong>⚠️ Консоль только для просмотра</strong><br>
-    Команды изменения (<code>save, write, configure, reload, system-view</code> и др.)
-    выполняются только через <a href="/scripts">скрипты</a>.
-    Разрешены только <code>show/display</code> команды.
-</div>
-{% endif %}
-<div class="card">
-    <div class="card-header">
+<div class="device-page">
+    <!-- Заголовок -->
+    <div class="device-header">
         <div>
             <h2>{{ device.name }}</h2>
-            <p style="color: #6c757d;">{{ device.host }}:{{ device.port }} | {{ device.description }}</p>
+            <p class="device-info">{{ device.host }}:{{ device.port }} | {{ device.description }}</p>
         </div>
         <div>
             <a href="/" class="btn btn-secondary">← К списку</a>
         </div>
     </div>
 
-    <!-- Информация о подключении (без формы ввода) -->
-    <div style="margin-bottom: 1rem; padding: 1rem; background: #d4edda; border-radius: 5px; color: #155724; display: flex; align-items: center; gap: 0.5rem;">
-        <span style="font-size: 1.2rem;">🔌</span>
-        <span><strong>Подключение:</strong> Используются общие учетные данные (admin / DefHccb01)</span>
+    <!-- Вкладки -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="console">📟 Консоль</button>
+        <button class="tab-btn" data-tab="configs">📁 Конфигурации</button>
     </div>
 
-    <!-- Консоль -->
-    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-        <input type="text" id="command" class="form-control"
-               placeholder="Введите команду (например: display version)"
-               autocomplete="off" style="font-family: 'Courier New', monospace;"
-               {% if user_role == 'viewer' and device.purpose == 'server' %}disabled{% endif %}>
-
-        {% if not (user_role == 'viewer' and device.purpose == 'server') %}
-        <button onclick="executeCommand()" id="execute-btn" class="btn btn-primary">Выполнить</button>
-        {% endif %}
-
-        {% if device.purpose != 'server' and user_role != 'viewer' %}
-        <button onclick="saveConfig()" id="save-config-btn" class="btn btn-warning">Сохранить конфиг</button>
-        {% endif %}
-
-        <button onclick="clearOutput()" class="btn btn-secondary">Очистить</button>
-    </div>
-
-     <!-- ВЫВОД КОНСОЛИ -->
-    <div id="output" style="background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; padding: 1rem;
-                border-radius: 5px; min-height: 400px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4;">
-        <span style="color: #6a9955;"># Готов к работе. Введите команду для устройства {{ device.name }}.</span>
-    </div>
-
-    <!-- История команд и сохраненные конфигурации -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-        <div class="card" style="padding: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <h3 style="margin: 0;">История команд</h3>
-                <div id="history-pagination-info" style="font-size: 0.8rem; color: #6c757d;"></div>
-            </div>
-            <div id="command-history" style="max-height: 300px; overflow-y: auto;">
-                <div style="color: #6c757d;">Загрузка...</div>
-            </div>
-            <div id="history-pagination" style="margin-top: 0.5rem; text-align: center;"></div>
+    <!-- ========== ВКЛАДКА КОНСОЛЬ ========== -->
+    <div class="tab-content active" id="tab-console">
+        <!-- Предупреждения -->
+        {% if user_role == 'viewer' and device.purpose == 'server' %}
+        <div class="alert alert-danger">
+            ⛔ Режим Viewer: доступ к серверам только для просмотра.
         </div>
+        {% elif device.purpose == 'server' %}
+        <div class="alert alert-success">
+            🖥️ Подключение к серверу <strong>{{ device.name }}</strong> ({{ device.host }}:{{ device.port }})
+        </div>
+        {% endif %}
 
-        {% if device.purpose != 'server' %}
-        <div class="card" style="padding: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <h3 style="margin: 0;">Сохраненные конфигурации</h3>
-                <div id="configs-pagination-info" style="font-size: 0.8rem; color: #6c757d;"></div>
+        <!-- Терминал -->
+        <div class="terminal">
+            <div class="terminal-header">
+                <span class="terminal-title">SSH: {{ device.host }}:{{ device.port }}</span>
+                <span class="terminal-status" id="terminal-status">🟢 connected</span>
             </div>
-            <div id="config-history" style="max-height: 300px; overflow-y: auto;">
-                <div style="color: #6c757d;">Загрузка...</div>
+            <div class="terminal-output" id="terminal-output">
+                <div class="welcome-line"># Подключено к {{ device.name }}</div>
+                <div class="welcome-line"># Введите команду</div>
             </div>
-            <div id="configs-pagination" style="margin-top: 0.5rem; text-align: center;"></div>
+            <div class="terminal-input-line">
+                <span class="prompt">></span>
+                <input type="text" id="command-input" class="command-input"
+                       placeholder="show version" autocomplete="off"
+                       {% if user_role == 'viewer' and device.purpose == 'server' %}disabled{% endif %}>
+                <button id="send-btn" class="send-btn"
+                        {% if user_role == 'viewer' and device.purpose == 'server' %}disabled{% endif %}>⏎ Enter</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== ВКЛАДКА КОНФИГУРАЦИИ ========== -->
+    <div class="tab-content" id="tab-configs">
+        {% if device.purpose == 'server' %}
+        <div class="alert alert-info">
+            📁 Для серверов сохранение конфигураций не поддерживается.
         </div>
         {% else %}
-        <!-- Для серверов показываем заглушку или ничего -->
-        <div class="card" style="padding: 1rem; background: #f8f9fa;">
-            <h3 style="margin: 0; color: #6c757d;">📁 Конфигурации</h3>
-            <p style="color: #6c757d; margin-top: 0.5rem;">Для серверов сохранение конфигураций не поддерживается.</p>
+        <div class="configs-header">
+            <div class="configs-actions">
+                <button onclick="saveConfig()" class="btn btn-success">💾 Сохранить текущую конфигурацию</button>
+                <input type="text" id="config-search" class="form-control" placeholder="🔍 Поиск по конфигурациям...">
+            </div>
         </div>
+        <div id="configs-list">
+            <div class="loading">Загрузка...</div>
+        </div>
+        <div id="configs-pagination" class="pagination"></div>
         {% endif %}
     </div>
 </div>
 
+<style>
+/* Стили для вкладок */
+.tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 1.5rem;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    color: #6c757d;
+    transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+}
+
+.tab-btn:hover {
+    color: #007bff;
+}
+
+.tab-btn.active {
+    color: #007bff;
+    border-bottom-color: #007bff;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Стили для терминала */
+.terminal {
+    background: #1e1e1e;
+    border-radius: 8px;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    height: 550px;
+}
+
+.terminal-header {
+    background: #2d2d2d;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    color: #ccc;
+    font-size: 12px;
+    border-bottom: 1px solid #3d3d3d;
+}
+
+.terminal-title {
+    font-family: monospace;
+}
+
+.terminal-status {
+    font-family: monospace;
+}
+
+.terminal-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    color: #d4d4d4;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    background: #1e1e1e;
+}
+
+.terminal-output .welcome-line {
+    color: #6a9955;
+    margin-bottom: 8px;
+}
+
+.terminal-output .command-line {
+    color: #4ec9b0;
+    margin-top: 8px;
+}
+
+.terminal-output .output-line {
+    color: #d4d4d4;
+    margin-left: 12px;
+    white-space: pre-wrap;
+}
+
+.terminal-output .error-line {
+    color: #f14c4c;
+}
+
+.terminal-input-line {
+    background: #2d2d2d;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    border-top: 1px solid #3d3d3d;
+}
+
+.terminal-input-line .prompt {
+    color: #4ec9b0;
+    font-weight: bold;
+    margin-right: 8px;
+}
+
+.terminal-input-line .command-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #d4d4d4;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    outline: none;
+}
+
+.terminal-input-line .send-btn {
+    background: #0e639c;
+    border: none;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 8px;
+    font-family: monospace;
+}
+
+.terminal-input-line .send-btn:hover {
+    background: #1177bb;
+}
+
+.terminal-input-line .send-btn:disabled {
+    background: #4a4a4a;
+    cursor: not-allowed;
+}
+
+/* Стили для конфигураций */
+.configs-header {
+    margin-bottom: 1rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.configs-actions {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+}
+
+#config-search {
+    max-width: 300px;
+}
+
+.config-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.config-item:hover {
+    background: #e9ecef;
+}
+
+.config-info {
+    display: flex;
+    gap: 1rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.config-date {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+.config-user {
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    color: #495057;
+}
+
+.config-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.config-actions button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.loading {
+    text-align: center;
+    padding: 2rem;
+    color: #6c757d;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.device-info {
+    color: #6c757d;
+    margin: 0;
+}
+</style>
+
 <script>
-    let deviceId = {{ device.id }};
-    let deviceName = "{{ device.name }}";
+    const deviceId = {{ device.id }};
+    const deviceName = "{{ device.name }}";
+    const userRole = "{{ user_role }}";
+    const devicePurpose = "{{ device.purpose }}";
 
-    // Пагинация для истории команд
-    let historyCurrentPage = 1;
-    let historyTotalPages = 1;
-    let historyPerPage = 20;
+    // Состояние терминала
+    let history = [];
+    let historyIndex = -1;
+    let isViewerServer = (userRole === 'viewer' && devicePurpose === 'server');
 
-    // Пагинация для конфигов
-    let configsCurrentPage = 1;
-    let configsTotalPages = 1;
-    let configsPerPage = 10;
+    // Элементы DOM
+    const terminalOutput = document.getElementById('terminal-output');
+    const commandInput = document.getElementById('command-input');
+    const sendBtn = document.getElementById('send-btn');
+    const terminalStatus = document.getElementById('terminal-status');
 
-    function executeCommand() {
-        const command = document.getElementById('command').value.trim();
+    // ========== ЛОГИКА ТЕРМИНАЛА ==========
 
-        if (!command) {
-            alert('Введите команду');
-            return;
+    function appendToTerminal(text, isCommand = false, isError = false) {
+        const line = document.createElement('div');
+        if (isCommand) {
+            line.className = 'command-line';
+            line.textContent = text;
+        } else if (isError) {
+            line.className = 'error-line';
+            line.textContent = text;
+        } else {
+            line.className = 'output-line';
+            // Сохраняем форматирование
+            let formatted = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/ /g, '&nbsp;')
+                .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
+                .replace(/\n/g, '<br>');
+            line.innerHTML = formatted;
         }
+        terminalOutput.appendChild(line);
+        terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    }
 
-        showLoading();
+    async function executeCommand(command) {
+        if (!command.trim()) return;
 
-        fetch(`/api/device/${deviceId}/execute`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({command: command})
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideLoading();
+        // Показываем команду в выводе
+        appendToTerminal(`> ${command}`, true);
+
+        // Сохраняем в историю
+        history.push(command);
+        historyIndex = history.length;
+
+        // Отключаем ввод на время выполнения
+        commandInput.disabled = true;
+        sendBtn.disabled = true;
+        terminalStatus.textContent = '🟡 executing...';
+
+        try {
+            const response = await fetch(`/api/device/${deviceId}/execute`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ command: command })
+            });
+
+            const data = await response.json();
 
             if (data.error) {
-                document.getElementById('output').innerHTML +=
-                    `\n<span style="color: #f14c4c;">Ошибка: ${data.error}</span>`;
+                appendToTerminal(`Ошибка: ${data.error}`, false, true);
             } else {
-                const outputDiv = document.getElementById('output');
-
-                // Добавляем промпт с именем устройства
-                outputDiv.innerHTML += `\n<span style="color: #4ec9b0;">[${deviceName}]</span> <span style="color: #d4d4d4;">${command}</span>\n`;
-
-                // СОХРАНЯЕМ ФОРМАТИРОВАНИЕ КОНСОЛИ
-                let formattedOutput = data.output
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/ /g, '&nbsp;')
-                    .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
-                    .replace(/\n/g, '<br>');
-
-                outputDiv.innerHTML += `<span style="color: #d4d4d4;">${formattedOutput}</span>\n`;
-
-                document.getElementById('command').value = '';
-                loadCommandHistory(historyCurrentPage);  // Обновляем историю, оставаясь на текущей странице
+                appendToTerminal(data.output, false);
             }
 
-            const outputDiv = document.getElementById('output');
-            outputDiv.scrollTop = outputDiv.scrollHeight;
-        })
-        .catch(error => {
-            hideLoading();
-            alert('Ошибка: ' + error);
-        });
-    }
-
-    function saveConfig() {
-        showLoading();
-
-        fetch(`/api/device/${deviceId}/save_config`, {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideLoading();
-            if (data.success) {
-                alert('Конфигурация сохранена');
-                loadConfigHistory(configsCurrentPage);  // Обновляем конфиги, оставаясь на текущей странице
-            } else {
-                alert('Ошибка: ' + data.error);
+            // Обновляем историю команд в правой панели (если нужно)
+            if (typeof loadCommandHistory === 'function') {
+                loadCommandHistory(1);
             }
-        })
-        .catch(error => {
-            hideLoading();
-            alert('Ошибка: ' + error);
-        });
+
+        } catch (error) {
+            appendToTerminal(`Ошибка подключения: ${error.message}`, false, true);
+        } finally {
+            commandInput.disabled = false;
+            sendBtn.disabled = false;
+            terminalStatus.textContent = '🟢 connected';
+            commandInput.focus();
+        }
     }
 
-    function clearOutput() {
-        document.getElementById('output').innerHTML =
-            '<span style="color: #6a9955;"># Вывод очищен.</span>';
+    function navigateHistory(direction) {
+        const newIndex = historyIndex + direction;
+        if (newIndex >= 0 && newIndex < history.length) {
+            historyIndex = newIndex;
+            commandInput.value = history[historyIndex];
+        } else if (direction === 1 && newIndex === history.length) {
+            historyIndex = history.length;
+            commandInput.value = '';
+        }
     }
 
-    // Загрузка истории команд с пагинацией
-    function loadCommandHistory(page) {
-        historyCurrentPage = page;
+    // ========== ЛОГИКА КОНФИГУРАЦИЙ ==========
 
-        fetch(`/api/device/${deviceId}/history?page=${page}&per_page=${historyPerPage}`)
-            .then(response => response.json())
-            .then(data => {
-                const container = document.getElementById('command-history');
+    let configsCurrentPage = 1;
+    let configsTotalPages = 1;
+    let configsPerPage = 20;
+    let currentSearchQuery = '';
 
-                // Обновляем информацию о пагинации
-                historyTotalPages = data.pages;
-                document.getElementById('history-pagination-info').textContent =
-                    `Страница ${data.page} из ${data.pages} (всего ${data.total} записей)`;
-
-                if (data.items.length === 0) {
-                    container.innerHTML = '<div style="color: #6c757d;">История пуста</div>';
-                    renderHistoryPagination();
-                    return;
-                }
-
-                container.innerHTML = data.items.map(item =>
-                    `<div style="padding: 0.3rem 0; border-bottom: 1px solid #e9ecef; cursor: pointer;"
-                          onclick="useCommand('${item.command.replace(/'/g, "\\'")}')">
-                        <small style="color: #6c757d;">${new Date(item.executed_at).toLocaleString()}</small>
-                        <div style="font-family: monospace; word-break: break-all;">${escapeHtml(item.command)}</div>
-                     </div>`
-                ).join('');
-
-                renderHistoryPagination();
-            })
-            .catch(error => {
-                console.error('Ошибка загрузки истории:', error);
-                document.getElementById('command-history').innerHTML =
-                    '<div style="color: #dc3545;">Ошибка загрузки</div>';
-            });
-    }
-
-    // Загрузка конфигов с пагинацией
-    function loadConfigHistory(page) {
+    async function loadConfigs(page = 1, search = '') {
         configsCurrentPage = page;
+        currentSearchQuery = search;
 
-        fetch(`/api/device/${deviceId}/configs?page=${page}&per_page=${configsPerPage}`)
-            .then(response => response.json())
-            .then(data => {
-                const container = document.getElementById('config-history');
-
-                // Обновляем информацию о пагинации
-                configsTotalPages = data.pages;
-                document.getElementById('configs-pagination-info').textContent =
-                    `Страница ${data.page} из ${data.pages} (всего ${data.total} записей)`;
-
-                if (data.items.length === 0) {
-                    container.innerHTML = '<div style="color: #6c757d;">Нет сохраненных конфигураций</div>';
-                    renderConfigsPagination();
-                    return;
-                }
-
-                container.innerHTML = data.items.map(config =>
-                    `<div style="padding: 0.3rem 0; border-bottom: 1px solid #e9ecef; cursor: pointer;"
-                          onclick="window.location.href='/config/${config.id}'">
-                        <small style="color: #6c757d;">${new Date(config.saved_at).toLocaleString()}</small>
-                        <div>Конфигурация #${config.id}</div>
-                     </div>`
-                ).join('');
-
-                renderConfigsPagination();
-            })
-            .catch(error => {
-                console.error('Ошибка загрузки конфигов:', error);
-                document.getElementById('config-history').innerHTML =
-                    '<div style="color: #dc3545;">Ошибка загрузки</div>';
-            });
-    }
-
-    // Рендер пагинации для истории
-    function renderHistoryPagination() {
-        const container = document.getElementById('history-pagination');
+        const container = document.getElementById('configs-list');
         if (!container) return;
 
-        if (historyTotalPages <= 1) {
-            container.innerHTML = '';
-            return;
+        container.innerHTML = '<div class="loading">Загрузка...</div>';
+
+        let url = `/api/device/${deviceId}/configs?page=${page}&per_page=${configsPerPage}`;
+        if (search) {
+            url += `&search=${encodeURIComponent(search)}`;
         }
 
-        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center;">';
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
 
-        if (historyCurrentPage > 1) {
-            html += `<button class="btn btn-sm btn-secondary" onclick="loadCommandHistory(${historyCurrentPage - 1})">← Назад</button>`;
+            configsTotalPages = data.pages;
+
+            if (data.items.length === 0) {
+                container.innerHTML = '<div class="loading">Нет сохранённых конфигураций</div>';
+                renderConfigsPagination();
+                return;
+            }
+
+            container.innerHTML = data.items.map(config => `
+                <div class="config-item" onclick="viewConfig(${config.id})">
+                    <div class="config-info">
+                        <strong>Конфигурация #${config.id}</strong>
+                        <span class="config-date">${new Date(config.saved_at).toLocaleString()}</span>
+                        ${config.saved_by ? `<span class="config-user">👤 ${config.saved_by}</span>` : ''}
+                    </div>
+                    <div class="config-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-sm btn-primary" onclick="viewConfig(${config.id})">👁️ Просмотр</button>
+                        <button class="btn btn-sm btn-info" onclick="downloadConfig(${config.id})">💾 Скачать</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteConfig(${config.id})">🗑️ Удалить</button>
+                    </div>
+                </div>
+            `).join('');
+
+            renderConfigsPagination();
+
+        } catch (error) {
+            container.innerHTML = '<div class="loading">Ошибка загрузки конфигураций</div>';
         }
-
-        html += `<span style="font-size: 0.85rem;">${historyCurrentPage} / ${historyTotalPages}</span>`;
-
-        if (historyCurrentPage < historyTotalPages) {
-            html += `<button class="btn btn-sm btn-secondary" onclick="loadCommandHistory(${historyCurrentPage + 1})">Вперед →</button>`;
-        }
-
-        html += '</div>';
-        container.innerHTML = html;
     }
 
-    // Рендер пагинации для конфигов
     function renderConfigsPagination() {
         const container = document.getElementById('configs-pagination');
         if (!container) return;
@@ -299,45 +472,110 @@
             return;
         }
 
-        let html = '<div style="display: flex; gap: 0.5rem; justify-content: center;">';
-
+        let html = '<div class="pagination">';
         if (configsCurrentPage > 1) {
-            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigHistory(${configsCurrentPage - 1})">← Назад</button>`;
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${configsCurrentPage - 1}, '${currentSearchQuery}')">← Предыдущая</button>`;
         }
-
-        html += `<span style="font-size: 0.85rem;">${configsCurrentPage} / ${configsTotalPages}</span>`;
-
+        html += `<span style="padding: 0.5rem;">${configsCurrentPage} / ${configsTotalPages}</span>`;
         if (configsCurrentPage < configsTotalPages) {
-            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigHistory(${configsCurrentPage + 1})">Вперед →</button>`;
+            html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${configsCurrentPage + 1}, '${currentSearchQuery}')">Следующая →</button>`;
         }
-
         html += '</div>';
         container.innerHTML = html;
     }
 
-    function useCommand(cmd) {
-        document.getElementById('command').value = cmd;
+    function saveConfig() {
+        fetch(`/api/device/${deviceId}/save_config`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Конфигурация сохранена');
+                    loadConfigs(configsCurrentPage, currentSearchQuery);
+                } else {
+                    alert('❌ Ошибка: ' + data.error);
+                }
+            })
+            .catch(error => alert('Ошибка: ' + error));
     }
 
-    function escapeHtml(text) {
-        if (!text) return '';
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+    function viewConfig(configId) {
+        window.location.href = `/config/${configId}`;
     }
 
-    // Обработка Enter
-    document.getElementById('command').addEventListener('keypress', function(e) {
+    function downloadConfig(configId) {
+        window.location.href = `/api/config/${configId}/download`;
+    }
+
+    function deleteConfig(configId) {
+        if (!confirm('Удалить конфигурацию?')) return;
+
+        fetch(`/api/config/${configId}/delete`, { method: 'GET' })
+            .then(() => {
+                loadConfigs(configsCurrentPage, currentSearchQuery);
+            })
+            .catch(error => alert('Ошибка: ' + error));
+    }
+
+    // ========== ИНИЦИАЛИЗАЦИЯ ==========
+
+    // Переключение вкладок
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+
+            // Обновляем кнопки
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Обновляем контент
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+
+            // Загружаем конфигурации если открыли вкладку
+            if (tabId === 'configs' && devicePurpose !== 'server') {
+                loadConfigs(1, '');
+            }
+        });
+    });
+
+    // Обработка ввода
+    commandInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
-            executeCommand();
+            const command = commandInput.value;
+            commandInput.value = '';
+            executeCommand(command);
         }
     });
 
-    // Загружаем историю при старте
-    loadCommandHistory(1);
-    {% if device.purpose != 'server' %}
-    loadConfigHistory(1);
-    {% endif %}
+    commandInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateHistory(-1);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateHistory(1);
+        }
+    });
+
+    sendBtn.addEventListener('click', () => {
+        const command = commandInput.value;
+        commandInput.value = '';
+        executeCommand(command);
+    });
+
+    // Поиск по конфигурациям
+    const searchInput = document.getElementById('config-search');
+    if (searchInput) {
+        let debounceTimer;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                loadConfigs(1, e.target.value);
+            }, 300);
+        });
+    }
+
+    // Фокус на поле ввода
+    commandInput.focus();
 </script>
 {% endblock %}
