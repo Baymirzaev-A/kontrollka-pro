@@ -71,7 +71,6 @@ def check_devices_status(devices, max_workers=50):
                 results[device['id']] = False
 
     online_count = sum(1 for status in results.values() if status)
-    logger.info(f"📊 Статус проверен: {online_count}/{len(devices)} устройств онлайн")
 
     return results
 

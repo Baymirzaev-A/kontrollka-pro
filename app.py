@@ -56,7 +56,6 @@ def get_cached_statuses(force=False):
             status_cache['data'] = check_devices_status(devices)
             status_cache['last_check'] = now
             online = sum(1 for s in status_cache['data'].values() if s)
-            logger.info(f"📊 Статус проверен: {online}/{len(devices)} устройств онлайн")
         else:
             status_cache['data'] = {}
 
