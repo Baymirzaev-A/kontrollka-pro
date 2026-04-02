@@ -3,6 +3,9 @@ import os
 import json
 import subprocess
 from .inventory import generate_inventory
+from database import DeviceDB
+
+db = DeviceDB()
 
 
 class AnsibleRunner:
