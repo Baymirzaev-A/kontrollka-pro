@@ -20,12 +20,58 @@
         </div>
 
         <div class="form-group">
-            <label>Тип устройства:</label>
-            <select name="device_type" class="form-control">
-                <option value="huawei" {% if device.device_type == 'huawei' %}selected{% endif %}>Huawei</option>
-                <option value="cisco_ios" {% if device.device_type == 'cisco_ios' %}selected{% endif %}>Cisco IOS</option>
-                <option value="arista_eos" {% if device.device_type == 'arista_eos' %}selected{% endif %}>Arista EOS</option>
-                <option value="juniper" {% if device.device_type == 'juniper' %}selected{% endif %}>Juniper</option>
+            <label>Тип устройства</label>
+            <select id="deviceType" name="device_type" class="form-control">
+                <optgroup label="Cisco">
+                    <option value="cisco_ios" {% if device.device_type == 'cisco_ios' %}selected{% endif %}>Cisco IOS / IOS-XE</option>
+                    <option value="cisco_nxos" {% if device.device_type == 'cisco_nxos' %}selected{% endif %}>Cisco NX-OS</option>
+                    <option value="cisco_xr" {% if device.device_type == 'cisco_xr' %}selected{% endif %}>Cisco IOS-XR</option>
+                    <option value="cisco_asa" {% if device.device_type == 'cisco_asa' %}selected{% endif %}>Cisco ASA</option>
+                </optgroup>
+                <optgroup label="Huawei">
+                    <option value="huawei" {% if device.device_type == 'huawei' %}selected{% endif %}>Huawei VRP</option>
+                    <option value="huawei_vrpv8" {% if device.device_type == 'huawei_vrpv8' %}selected{% endif %}>Huawei CE / VRPv8</option>
+                    <option value="huawei_olt" {% if device.device_type == 'huawei_olt' %}selected{% endif %}>Huawei OLT</option>
+                </optgroup>
+                <optgroup label="Juniper">
+                    <option value="juniper" {% if device.device_type == 'juniper' %}selected{% endif %}>Juniper JunOS</option>
+                </optgroup>
+                <optgroup label="Arista">
+                    <option value="arista_eos" {% if device.device_type == 'arista_eos' %}selected{% endif %}>Arista EOS</option>
+                </optgroup>
+                <optgroup label="HP / Aruba">
+                    <option value="hp_procurve" {% if device.device_type == 'hp_procurve' %}selected{% endif %}>HP ProCurve</option>
+                    <option value="hp_comware" {% if device.device_type == 'hp_comware' %}selected{% endif %}>HP Comware</option>
+                    <option value="aruba_os" {% if device.device_type == 'aruba_os' %}selected{% endif %}>ArubaOS</option>
+                </optgroup>
+                <optgroup label="Dell">
+                    <option value="dell_force10" {% if device.device_type == 'dell_force10' %}selected{% endif %}>Dell Force10 / OS9</option>
+                    <option value="dell_os10" {% if device.device_type == 'dell_os10' %}selected{% endif %}>Dell OS10</option>
+                    <option value="dell_powerconnect" {% if device.device_type == 'dell_powerconnect' %}selected{% endif %}>Dell PowerConnect</option>
+                </optgroup>
+                <optgroup label="Extreme">
+                    <option value="extreme_exos" {% if device.device_type == 'extreme_exos' %}selected{% endif %}>Extreme EXOS</option>
+                    <option value="extreme_ers" {% if device.device_type == 'extreme_ers' %}selected{% endif %}>Extreme ERS</option>
+                    <option value="extreme_nos" {% if device.device_type == 'extreme_nos' %}selected{% endif %}>Extreme NOS</option>
+                </optgroup>
+                <optgroup label="Fortinet">
+                    <option value="fortinet" {% if device.device_type == 'fortinet' %}selected{% endif %}>FortiGate</option>
+                </optgroup>
+                <optgroup label="Alcatel / Nokia">
+                    <option value="alcatel_sros" {% if device.device_type == 'alcatel_sros' %}selected{% endif %}>Nokia SR-OS</option>
+                </optgroup>
+                <optgroup label="Brocade / Ruckus">
+                    <option value="brocade_fastiron" {% if device.device_type == 'brocade_fastiron' %}selected{% endif %}>Brocade FastIron</option>
+                    <option value="brocade_netiron" {% if device.device_type == 'brocade_netiron' %}selected{% endif %}>Brocade NetIron</option>
+                </optgroup>
+                <optgroup label="Eltex">
+                    <option value="eltex" {% if device.device_type == 'eltex' %}selected{% endif %}>Eltex ESP</option>
+                    <option value="eltex_esr" {% if device.device_type == 'eltex_esr' %}selected{% endif %}>Eltex ESR</option>
+                </optgroup>
+                <optgroup label="Linux / Generic">
+                    <option value="linux" {% if device.device_type == 'linux' %}selected{% endif %}>Linux / Unix (SSH)</option>
+                    <option value="generic_termserver" {% if device.device_type == 'generic_termserver' %}selected{% endif %}>Generic Terminal Server</option>
+                </optgroup>
             </select>
         </div>
 
@@ -45,6 +91,7 @@
                 <option value="router" {% if device.purpose == 'router' %}selected{% endif %}>Роутер</option>
                 <option value="switch" {% if device.purpose == 'switch' %}selected{% endif %}>Коммутатор</option>
                 <option value="firewall" {% if device.purpose == 'firewall' %}selected{% endif %}>Файрвол</option>
+                <option value="server" {% if device.purpose == 'server' %}selected{% endif %}>Сервер</option>
             </select>
         </div>
 

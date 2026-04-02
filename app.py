@@ -1711,6 +1711,16 @@ def import_devices():
             except Exception as e:
                 results['errors'].append(f"Строка {idx + 2}: {str(e)}")
 
+        # Сбрасываем кеш устройств
+        invalidate_devices_cache()
+
+        # Отправляем WebSocket уведомление всем клиентам
+        socketio.emit('devices_updated', {
+            'action': 'import',
+            'added': results['added'],
+            'timestamp': datetime.now().isoformat()
+        })
+
         return jsonify({'success': True, **results})
 
     except Exception as e:
