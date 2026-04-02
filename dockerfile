@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y \
     ansible \
     && rm -rf /var/lib/apt/lists/*
 
+# Установка необходимых коллекций Ansible
+RUN ansible-galaxy collection install community.network && \
+    ansible-galaxy collection install huaweidatacom.ne && \
+    ansible-galaxy collection install ansible.netcommon
+
 WORKDIR /app
 
 # Копируем зависимости
