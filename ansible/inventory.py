@@ -19,10 +19,17 @@ def generate_inventory(device_ids=None):
             'vars': {
                 'ansible_ssh_user': os.environ.get('DEVICE_USERNAME', 'admin'),
                 'ansible_ssh_pass': os.environ.get('DEVICE_PASSWORD', 'admin'),
-                # Отключаем проверку ключа хоста
-                'ansible_ssh_extra_args': '-o StrictHostKeyChecking=no -o ConnectTimeout=30',
-                # Явно указываем совместимые алгоритмы (подходят для старого Cisco/Huawei)
-                'ansible_ssh_common_args': '-o KexAlgorithms=diffie-hellman-group14-sha256,diffie-hellman-group-exchange-sha256 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa'
+                'ansible_ssh_common_args': (
+                    '-o KexAlgorithms=diffie-hellman-group1-sha1,'
+                    'diffie-hellman-group14-sha1,'
+                    'diffie-hellman-group-exchange-sha1,'
+                    'diffie-hellman-group14-sha256,'
+                    'diffie-hellman-group16-sha512 '
+                    '-o HostKeyAlgorithms=+ssh-rsa,ssh-dss '
+                    '-o PubkeyAcceptedKeyTypes=+ssh-rsa,ssh-dss '
+                    '-o Ciphers=aes256-cbc,aes128-cbc,3des-cbc'
+                ),
+                'ansible_ssh_extra_args': '-o StrictHostKeyChecking=no -o ConnectTimeout=30'
             }
         }
     }

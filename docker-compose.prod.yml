@@ -73,6 +73,7 @@ services:
       - ./logs:/app/logs
       - ./certs:/app/certs:ro
       - ./ssh_keys:/app/ssh_keys:ro
+      - ./ansible/playbooks:/app/ansible/playbooks
     depends_on:
       postgres:
         condition: service_healthy
