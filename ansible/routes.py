@@ -64,7 +64,8 @@ def run_playbook(name):
     result = runner.run_playbook(
         name,
         device_ids=data.get('device_ids', []),
-        extra_vars=data.get('extra_vars', {})
+        extra_vars=data.get('extra_vars', {}),
+        executed_by = session.get('username', 'unknown')
     )
     return jsonify(result)
 

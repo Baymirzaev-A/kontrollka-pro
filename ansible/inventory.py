@@ -19,6 +19,13 @@ def generate_inventory(device_ids=None):
             'vars': {
                 'ansible_ssh_user': os.environ.get('DEVICE_USERNAME', 'admin'),
                 'ansible_ssh_pass': os.environ.get('DEVICE_PASSWORD', 'admin'),
+                'ansible_ssh_common_args': (
+                    '-o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1 '
+                    '-o HostKeyAlgorithms=+ssh-rsa '
+                    '-o Ciphers=aes256-cbc,aes128-cbc '
+                    '-o ConnectTimeout=10'
+                ),
+                'ansible_ssh_extra_args': '-o StrictHostKeyChecking=no'
             }
         }
     }

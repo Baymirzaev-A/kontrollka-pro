@@ -33,8 +33,8 @@ class AnsibleRunner:
             f.write(content)
         return path
 
-    def run_playbook(self, playbook_name, device_ids=None, extra_vars=None):
-        """Запускает playbook"""
+    def run_playbook(self, playbook_name, device_ids=None, extra_vars=None, executed_by=None):
+        """Запускает playbook и сохраняет историю"""
         playbook_path = os.path.join(self.playbooks_dir, playbook_name)
         if not os.path.exists(playbook_path):
             return {'success': False, 'error': f'Playbook {playbook_name} not found'}
@@ -48,8 +48,22 @@ class AnsibleRunner:
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            success = result.returncode == 0
+
+            # Сохраняем историю
+            from database import db
+            db.save_ansible_history(
+                playbook_name=playbook_name,
+                device_ids=device_ids,
+                extra_vars=extra_vars or {},
+                executed_by=executed_by or 'unknown',
+                success=success,
+                stdout=result.stdout,
+                stderr=result.stderr
+            )
+
             return {
-                'success': result.returncode == 0,
+                'success': success,
                 'stdout': result.stdout,
                 'stderr': result.stderr,
                 'returncode': result.returncode
