@@ -375,3 +375,6 @@ class AnsibleHistory(Base):
     success = Column(Integer)  # 0/1
     stdout = Column(Text)
     stderr = Column(Text)
+
+# ===== ГЛОБАЛЬНЫЙ ЭКЗЕМПЛЯР =====
+db = DeviceDB()
