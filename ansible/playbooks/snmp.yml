@@ -1,0 +1,11 @@
+---
+- name: Пример playbook
+  hosts: all
+  tasks:
+    - name: Выполнить команду show version
+      ansible.builtin.command: show version
+      register: output
+    
+    - name: Показать вывод
+      ansible.builtin.debug:
+        var: output.stdout

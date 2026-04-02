@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     python3-dev \
+    ansible \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Создаём папки для данных
-RUN mkdir -p data logs certs ssh_keys
+RUN mkdir -p data logs certs ssh_keys ansible/playbooks
 
 # Переменные окружения
 ENV PYTHONUNBUFFERED=1

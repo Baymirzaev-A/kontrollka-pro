@@ -32,9 +32,8 @@ ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
 
-
-
-
+from ansible import ansible_bp
+app.register_blueprint(ansible_bp)
 
 
 # ===== КЕШ СТАТУСОВ =====

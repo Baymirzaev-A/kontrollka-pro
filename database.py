@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -93,6 +94,7 @@ class DeviceDB:
                 purpose=purpose
             )
             session.add(device)
+
 
     # ========== МЕТОДЫ ДЛЯ УСТРОЙСТВ ==========
 
@@ -307,6 +309,24 @@ class DeviceDB:
         finally:
             session.close()
 
+    def save_ansible_history(self, playbook_name, device_ids, extra_vars, executed_by, success, stdout, stderr):
+        """Сохраняет историю запуска Ansible playbook"""
+        session = SessionLocal()
+        try:
+            history = AnsibleHistory(
+                playbook_name=playbook_name,
+                device_ids=json.dumps(device_ids) if device_ids else '[]',
+                extra_vars=json.dumps(extra_vars) if extra_vars else '{}',
+                executed_by=executed_by,
+                success=1 if success else 0,
+                stdout=stdout[:10000] if stdout else '',
+                stderr=stderr[:10000] if stderr else ''
+            )
+            session.add(history)
+            session.commit()
+        finally:
+            session.close()
+
     # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
     def _device_to_dict(self, device):
@@ -342,3 +362,16 @@ class DeviceDB:
             'executed_at': command.executed_at.isoformat() if command.executed_at else None,
             'executed_by': command.executed_by
         }
+
+class AnsibleHistory(Base):
+    __tablename__ = 'ansible_history'
+
+    id = Column(Integer, primary_key=True)
+    playbook_name = Column(String)
+    device_ids = Column(Text)  # JSON строка
+    extra_vars = Column(Text)  # JSON строка
+    executed_by = Column(String)
+    executed_at = Column(DateTime, default=datetime.now)
+    success = Column(Integer)  # 0/1
+    stdout = Column(Text)
+    stderr = Column(Text)

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Ansible{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>📦 Ansible Playbooks</h2>
+        <button class="btn btn-success" onclick="createPlaybook()">➕ Создать playbook</button>
+    </div>
+    
+    <div id="playbooks-list" style="margin-top: 1rem;">
+        <div class="loading">Загрузка...</div>
+    </div>
+</div>
+
+<script>
+    async function loadPlaybooks() {
+        const container = document.getElementById('playbooks-list');
+        try {
+            const response = await fetch('/ansible/api/playbooks');
+            const playbooks = await response.json();
+            
+            if (playbooks.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">📭 Нет playbooks. Создайте первый!</div>';
+                return;
+            }
+            
+            container.innerHTML = playbooks.map(p => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 0.5rem;">
+                    <div>
+                        <strong>📄 ${p.name}</strong>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-primary" onclick="editPlaybook('${p.name}')">✏️ Редактировать</button>
+                        <button class="btn btn-sm btn-success" onclick="runPlaybook('${p.name}')">🚀 Запустить</button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePlaybook('${p.name}')">🗑️ Удалить</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) {
+            container.innerHTML = '<div class="alert alert-danger">Ошибка загрузки</div>';
+        }
+    }
+    
+    function createPlaybook() {
+        const name = prompt('Введите имя playbook (например: update-config.yml):');
+        if (!name) return;
+        
+        const content = `---
+- name: Пример playbook
+  hosts: all
+  tasks:
+    - name: Выполнить команду show version
+      ansible.builtin.command: show version
+      register: output
+    
+    - name: Показать вывод
+      ansible.builtin.debug:
+        var: output.stdout
+`;
+        
+        fetch(`/ansible/api/playbooks/${name}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({content: content})
+        }).then(() => loadPlaybooks());
+    }
+    
+    function editPlaybook(name) {
+        window.location.href = `/ansible/playbook/${name}`;
+    }
+    
+    function runPlaybook(name) {
+        if (!confirm(`Запустить playbook ${name}?`)) return;
+        
+        fetch(`/ansible/api/playbooks/${name}/run`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Playbook выполнен успешно');
+                console.log(data.stdout);
+            } else {
+                alert('❌ Ошибка: ' + (data.error || data.stderr));
+            }
+        })
+        .catch(error => alert('Ошибка: ' + error));
+    }
+    
+    function deletePlaybook(name) {
+        if (!confirm(`Удалить playbook ${name}?`)) return;
+        
+        fetch(`/ansible/api/playbooks/${name}`, {
+            method: 'DELETE'
+        }).then(() => loadPlaybooks());
+    }
+    
+    loadPlaybooks();
+</script>
+
+<style>
+.loading {
+    text-align: center;
+    padding: 2rem;
+    color: #6c757d;
+}
+.btn-sm {
+    margin: 0 2px;
+}
+</style>
+{% endblock %}
