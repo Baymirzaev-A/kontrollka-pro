@@ -21,14 +21,13 @@ COPY . .
 # Создаём папки для данных
 RUN mkdir -p data logs certs ssh_keys ansible/playbooks
 
-RUN ansible-galaxy collection install ansible.netcommon && \
+RUN ansible-galaxy collection install ansible.netcommon  --force --upgrade && \
     ansible-galaxy collection install community.network && \
     ansible-galaxy collection install cisco.ios && \
     ansible-galaxy collection install cisco.nxos && \
     ansible-galaxy collection install junipernetworks.junos && \
     ansible-galaxy collection install arista.eos && \
-    ansible-galaxy collection install fortinet.fortios && \
-    ansible-galaxy collection install huawei.cloudengine || true
+    ansible-galaxy collection install fortinet.fortios
 
 # Переменные окружения
 ENV PYTHONUNBUFFERED=1
