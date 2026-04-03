@@ -40,6 +40,7 @@ def generate_inventory(device_ids=None):
             'vars': {
                 'ansible_user': os.environ.get('DEVICE_USERNAME', 'admin'),
                 'ansible_password': os.environ.get('DEVICE_PASSWORD', 'admin'),
+                'ansible_connection': 'network_cli',
                 'ansible_ssh_common_args': '-o StrictHostKeyChecking=no -o ConnectTimeout=30 -o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group14-sha256',
                 'ansible_ssh_extra_args': '-o ServerAliveInterval=15'
             }
