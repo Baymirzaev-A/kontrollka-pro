@@ -27,6 +27,16 @@ NETWORK_OS_MAP = {
     'generic_termserver': 'ansible.netcommon.default'
 }
 
+# SSH аргументы для совместимости со старым оборудованием (Huawei AR1220F)
+SSH_COMMON_ARGS = (
+    '-o StrictHostKeyChecking=no '
+    '-o ConnectTimeout=30 '
+    '-o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group14-sha256 '
+    '-o HostKeyAlgorithms=+ssh-rsa '
+    '-o PubkeyAcceptedAlgorithms=+ssh-rsa'
+)
+SSH_EXTRA_ARGS = '-o ServerAliveInterval=15'
+
 
 def generate_inventory(device_ids=None):
     if device_ids:
@@ -40,9 +50,8 @@ def generate_inventory(device_ids=None):
             'vars': {
                 'ansible_user': os.environ.get('DEVICE_USERNAME', 'admin'),
                 'ansible_password': os.environ.get('DEVICE_PASSWORD', 'admin'),
-                'ansible_connection': 'network_cli',
-                'ansible_ssh_common_args': '-o StrictHostKeyChecking=no -o ConnectTimeout=30 -o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group14-sha256',
-                'ansible_ssh_extra_args': '-o ServerAliveInterval=15'
+                'ansible_ssh_common_args': SSH_COMMON_ARGS,
+                'ansible_ssh_extra_args': SSH_EXTRA_ARGS
             }
         }
     }
@@ -51,18 +60,25 @@ def generate_inventory(device_ids=None):
         device_type = device.get('device_type', 'huawei')
         network_os = NETWORK_OS_MAP.get(device_type, 'ansible.netcommon.default')
 
-        # Для разных типов подключения
-        if device_type == 'linux':
-            connection = 'ssh'
-        else:
-            connection = 'ansible.netcommon.network_cli'
-
-        inventory['all']['hosts'][device['name']] = {
+        # Базовые параметры хоста
+        host_vars = {
             'ansible_host': device['host'],
             'ansible_port': device.get('port', 22),
             'ansible_network_os': network_os,
-            'ansible_connection': connection,
         }
+
+        # Правильное подключение в зависимости от типа устройства
+        if device_type == 'linux':
+            host_vars['ansible_connection'] = 'ssh'
+        else:
+            host_vars['ansible_connection'] = 'network_cli'
+            # Для Huawei добавляем enable (если нужен)
+            if 'huawei' in device_type:
+                host_vars['ansible_become'] = 'yes'
+                host_vars['ansible_become_method'] = 'enable'
+                host_vars['ansible_become_password'] = os.environ.get('DEVICE_ENABLE', '')
+
+        inventory['all']['hosts'][device['name']] = host_vars
 
     inv_path = '/tmp/kontrollka_inventory.yml'
     with open(inv_path, 'w') as f:

@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем приложение
 COPY . .
 
+COPY ansible.cfg /etc/ansible/ansible.cfg
+
 # Создаём папки для данных
 RUN mkdir -p data logs certs ssh_keys ansible/playbooks
 
