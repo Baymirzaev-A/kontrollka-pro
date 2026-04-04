@@ -37,6 +37,42 @@ def create_playbook():
     return jsonify({'id': playbook_id, 'success': True})
 
 
+@ansible_bp.route('/api/playbooks/<int:playbook_id>', methods=['GET'])
+def get_playbook(playbook_id):
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    playbook = db.get_playbook(playbook_id)
+    if not playbook:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(playbook)
+
+
+@ansible_bp.route('/api/playbooks/<int:playbook_id>', methods=['PUT'])
+def update_playbook(playbook_id):
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.json
+    name = data.get('name')
+    content = data.get('content')
+    description = data.get('description', '')
+    is_shared = data.get('is_shared', False)
+    username = session.get('username', 'unknown')
+
+    db.save_playbook(playbook_id, name, content, description, is_shared, username)
+    return jsonify({'success': True})
+
+
+@ansible_bp.route('/api/playbooks/<int:playbook_id>', methods=['DELETE'])
+def delete_playbook(playbook_id):
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    db.delete_playbook(playbook_id)
+    return jsonify({'success': True})
+
+
 @ansible_bp.route('/api/playbooks/<int:playbook_id>/run', methods=['POST'])
 def run_playbook(playbook_id):
     if session.get('role') != 'admin':
@@ -69,3 +105,14 @@ def run_playbook(playbook_id):
             return jsonify(json.loads(result))
 
     return jsonify({'success': False, 'error': 'Timeout'})
+
+
+@ansible_bp.route('/playbook/<int:playbook_id>')
+def edit_playbook_page(playbook_id):
+    if session.get('role') != 'admin':
+        return "Forbidden", 403
+
+    playbook = db.get_playbook(playbook_id)
+    if not playbook:
+        return "Playbook not found", 404
+    return render_template('playbook_edit.html', playbook=playbook)
