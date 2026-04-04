@@ -1,5 +1,5 @@
 FROM python:3.13
-
+RUN pip install setuptools
 # Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
     gcc \
@@ -23,13 +23,20 @@ COPY ansible.cfg /etc/ansible/ansible.cfg
 # Создаём папки для данных
 RUN mkdir -p data logs certs ssh_keys ansible/playbooks
 
-RUN ansible-galaxy collection install ansible.netcommon  --force --upgrade && \
-    ansible-galaxy collection install community.network && \
-    ansible-galaxy collection install cisco.ios && \
-    ansible-galaxy collection install cisco.nxos && \
-    ansible-galaxy collection install junipernetworks.junos && \
-    ansible-galaxy collection install arista.eos && \
-    ansible-galaxy collection install fortinet.fortios
+# Установка Ansible коллекций (только если отсутствуют, ошибки игнорируем)
+RUN ansible-galaxy collection list | grep -q ansible.netcommon || \
+    (ansible-galaxy collection install ansible.netcommon --upgrade || true)
+RUN ansible-galaxy collection list | grep -q community.network || \
+    (ansible-galaxy collection install community.network --upgrade || true)
+RUN ansible-galaxy collection list | grep -q cisco.ios || \
+    (ansible-galaxy collection install cisco.ios --upgrade || true)
+RUN ansible-galaxy collection list | grep -q cisco.nxos || \
+    (ansible-galaxy collection install cisco.nxos --upgrade || true)
+RUN ansible-galaxy collection list | grep -q junipernetworks.junos || \
+    (ansible-galaxy collection install junipernetworks.junos --upgrade || true)
+RUN ansible-galaxy collection list | grep -q arista.eos || \
+    (ansible-galaxy collection install arista.eos --upgrade || true)
+RUN ansible-galaxy collection install fortinet.fortios --upgrade || true
 
 # Переменные окружения
 ENV PYTHONUNBUFFERED=1
