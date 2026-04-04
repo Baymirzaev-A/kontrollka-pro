@@ -21,6 +21,22 @@ def list_playbooks():
     return jsonify(playbooks)
 
 
+@ansible_bp.route('/api/playbooks', methods=['POST'])
+def create_playbook():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.json
+    name = data.get('name')
+    content = data.get('content', '')
+    description = data.get('description', '')
+    is_shared = data.get('is_shared', False)
+    username = session.get('username', 'unknown')
+
+    playbook_id = db.save_playbook(None, name, content, description, is_shared, username)
+    return jsonify({'id': playbook_id, 'success': True})
+
+
 @ansible_bp.route('/api/playbooks/<int:playbook_id>/run', methods=['POST'])
 def run_playbook(playbook_id):
     if session.get('role') != 'admin':
