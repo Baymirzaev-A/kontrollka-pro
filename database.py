@@ -327,6 +327,108 @@ class DeviceDB:
         finally:
             session.close()
 
+    # ========== МЕТОДЫ ДЛЯ PLAYBOOKS ==========
+
+    def get_playbooks(self, username, user_role):
+        """Получить список доступных плейбуков (только для admin)"""
+        if user_role != 'admin':
+            return []
+
+        session = SessionLocal()
+        try:
+            query = session.query(Playbook).order_by(Playbook.name)
+            playbooks = query.all()
+            return [{
+                'id': p.id,
+                'name': p.name,
+                'description': p.description,
+                'owner': p.owner,
+                'is_shared': p.is_shared,
+                'updated_at': p.updated_at.isoformat() if p.updated_at else None
+            } for p in playbooks]
+        finally:
+            session.close()
+
+    def get_playbook(self, playbook_id):
+        """Получить содержимое плейбука по ID"""
+        session = SessionLocal()
+        try:
+            p = session.query(Playbook).filter(Playbook.id == playbook_id).first()
+            if not p:
+                return None
+            return {
+                'id': p.id,
+                'name': p.name,
+                'content': p.content,
+                'description': p.description,
+                'owner': p.owner,
+                'is_shared': p.is_shared
+            }
+        finally:
+            session.close()
+
+    def get_playbook_by_name(self, name):
+        """Получить плейбук по имени"""
+        session = SessionLocal()
+        try:
+            p = session.query(Playbook).filter(Playbook.name == name).first()
+            if not p:
+                return None
+            return {
+                'id': p.id,
+                'name': p.name,
+                'content': p.content,
+                'description': p.description,
+                'owner': p.owner,
+                'is_shared': p.is_shared
+            }
+        finally:
+            session.close()
+
+    def save_playbook(self, playbook_id, name, content, description, is_shared, username):
+        """Создать или обновить плейбук"""
+        session = SessionLocal()
+        try:
+            if playbook_id:
+                # Обновление
+                p = session.query(Playbook).filter(Playbook.id == playbook_id).first()
+                if p:
+                    p.name = name
+                    p.content = content
+                    p.description = description
+                    p.is_shared = 1 if is_shared else 0
+                    p.updated_by = username
+                    session.commit()
+                    return p.id
+            else:
+                # Создание
+                p = Playbook(
+                    name=name,
+                    content=content,
+                    description=description,
+                    owner=username,
+                    created_by=username,
+                    is_shared=1 if is_shared else 0
+                )
+                session.add(p)
+                session.commit()
+                return p.id
+        finally:
+            session.close()
+
+    def delete_playbook(self, playbook_id):
+        """Удалить плейбук"""
+        session = SessionLocal()
+        try:
+            p = session.query(Playbook).filter(Playbook.id == playbook_id).first()
+            if p:
+                session.delete(p)
+                session.commit()
+                return True
+            return False
+        finally:
+            session.close()
+
     # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
     def _device_to_dict(self, device):
@@ -375,6 +477,21 @@ class AnsibleHistory(Base):
     success = Column(Integer)  # 0/1
     stdout = Column(Text)
     stderr = Column(Text)
+
+# Добавить после класса AnsibleHistory
+class Playbook(Base):
+    __tablename__ = 'playbooks'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    content = Column(Text, nullable=False)
+    description = Column(String, default='')
+    owner = Column(String, nullable=False)  # кто создал
+    is_shared = Column(Integer, default=0)  # 0/1
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_by = Column(String)
+    updated_by = Column(String)
 
 # ===== ГЛОБАЛЬНЫЙ ЭКЗЕМПЛЯР =====
 db = DeviceDB()

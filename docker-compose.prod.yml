@@ -73,7 +73,6 @@ services:
       - ./logs:/app/logs
       - ./certs:/app/certs:ro
       - ./ssh_keys:/app/ssh_keys:ro
-      - ./ansible/playbooks:/app/ansible/playbooks
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,7 +80,17 @@ services:
         condition: service_started
     networks:
       - kontrollka_network
-
+  ansible-worker:
+    build: ./ansible-worker
+    container_name: kontrollka_ansible_worker
+    restart: always
+    environment:
+      - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
+      - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
+    depends_on:
+      - redis
+    networks:
+      - kontrollka_network
 volumes:
   postgres_data:
   redis_data:
