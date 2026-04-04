@@ -30,11 +30,12 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 0.5rem;">
                     <div>
                         <strong>📄 ${p.name}</strong>
+                        ${p.description ? `<br><small>${p.description}</small>` : ''}
                     </div>
                     <div>
-                        <button class="btn btn-sm btn-primary" onclick="editPlaybook('${p.name}')">✏️ Редактировать</button>
-                        <button class="btn btn-sm btn-success" onclick="runPlaybook('${p.name}')">🚀 Запустить</button>
-                        <button class="btn btn-sm btn-danger" onclick="deletePlaybook('${p.name}')">🗑️ Удалить</button>
+                        <button class="btn btn-sm btn-primary" onclick="editPlaybook(${p.id})">✏️ Редактировать</button>
+                        <button class="btn btn-sm btn-success" onclick="runPlaybook(${p.id})">🚀 Запустить</button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePlaybook(${p.id})">🗑️ Удалить</button>
                     </div>
                 </div>
             `).join('');
@@ -42,42 +43,49 @@
             container.innerHTML = '<div class="alert alert-danger">Ошибка загрузки</div>';
         }
     }
-    
+
     function createPlaybook() {
-        const name = prompt('Введите имя playbook (например: update-config.yml):');
+        const name = prompt('Введите имя playbook (например: update-config):');
         if (!name) return;
-        
+
         const content = `---
 - name: Пример playbook
   hosts: all
   tasks:
     - name: Выполнить команду show version
-      ansible.builtin.command: show version
+      community.network.ce_command:
+        commands: display version
       register: output
-    
+
     - name: Показать вывод
       ansible.builtin.debug:
         var: output.stdout
 `;
-        
-        fetch(`/ansible/api/playbooks/${name}`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({content: content})
-        }).then(() => loadPlaybooks());
-    }
-    
-    function editPlaybook(name) {
-        window.location.href = `/ansible/playbook/${name}`;
-    }
-    
-    function runPlaybook(name) {
-        if (!confirm(`Запустить playbook ${name}?`)) return;
-        
-        fetch(`/ansible/api/playbooks/${name}/run`, {
+
+        fetch('/ansible/api/playbooks', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
+            body: JSON.stringify({
+                name: name,
+                content: content,
+                description: '',
+                is_shared: false
+            })
+        }).then(() => loadPlaybooks());
+    }
+
+    function editPlaybook(id) {
+        window.location.href = `/ansible/playbook/${id}`;
+    }
+
+    function runPlaybook(id) {
+        if (!confirm(`Запустить playbook?`)) return;
+
+        // TODO: добавить выбор устройств
+        fetch(`/ansible/api/playbooks/${id}/run`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({device_ids: []})  // пустой массив = все устройства
         })
         .then(response => response.json())
         .then(data => {
@@ -90,11 +98,11 @@
         })
         .catch(error => alert('Ошибка: ' + error));
     }
-    
-    function deletePlaybook(name) {
-        if (!confirm(`Удалить playbook ${name}?`)) return;
-        
-        fetch(`/ansible/api/playbooks/${name}`, {
+
+    function deletePlaybook(id) {
+        if (!confirm(`Удалить playbook?`)) return;
+
+        fetch(`/ansible/api/playbooks/${id}`, {
             method: 'DELETE'
         }).then(() => loadPlaybooks());
     }
