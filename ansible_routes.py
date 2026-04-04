@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request, session, render_template
 from database import db
 import redis
 import json
@@ -6,6 +6,11 @@ import uuid
 
 ansible_bp = Blueprint('ansible', __name__, url_prefix='/ansible')
 r = redis.Redis(host='redis', port=6379, decode_responses=True)
+
+
+@ansible_bp.route('/')
+def index():
+    return render_template('ansible.html')
 
 
 @ansible_bp.route('/api/playbooks', methods=['GET'])
@@ -42,7 +47,6 @@ def run_playbook(playbook_id):
 
     r.lpush('ansible:tasks', json.dumps(task))
 
-    # Ждём результат (или возвращаем task_id)
     for _ in range(60):
         result = r.get(f'ansible:result:{task["task_id"]}')
         if result:
