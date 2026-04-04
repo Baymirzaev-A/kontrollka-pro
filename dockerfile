@@ -8,11 +8,6 @@ RUN apt-get update && apt-get install -y \
     ansible \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка необходимых коллекций Ansible
-RUN ansible-galaxy collection install community.network && \
-    ansible-galaxy collection install huaweidatacom.ne && \
-    ansible-galaxy collection install ansible.netcommon
-
 WORKDIR /app
 
 # Копируем зависимости
@@ -29,5 +24,5 @@ RUN mkdir -p data logs certs ssh_keys ansible/playbooks
 ENV PYTHONUNBUFFERED=1
 
 # Запуск через Gunicorn
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
-#CMD ["gunicorn", "-c", "gunicorn.conf.py", "--certfile=/app/certs/cert.pem", "--keyfile=/app/certs/key.pem", "app:app"]
+#CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "--certfile=/app/certs/cert.pem", "--keyfile=/app/certs/key.pem", "app:app"]
