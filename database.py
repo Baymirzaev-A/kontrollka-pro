@@ -59,6 +59,33 @@ class CommandHistory(Base):
 
     device = relationship('Device', back_populates='commands')
 
+class AnsibleHistory(Base):
+    __tablename__ = 'ansible_history'
+
+    id = Column(Integer, primary_key=True)
+    playbook_name = Column(String)
+    device_ids = Column(Text)  # JSON строка
+    extra_vars = Column(Text)  # JSON строка
+    executed_by = Column(String)
+    executed_at = Column(DateTime, default=datetime.now)
+    success = Column(Integer)  # 0/1
+    stdout = Column(Text)
+    stderr = Column(Text)
+
+# Добавить после класса AnsibleHistory
+class Playbook(Base):
+    __tablename__ = 'playbooks'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    content = Column(Text, nullable=False)
+    description = Column(String, default='')
+    owner = Column(String, nullable=False)  # кто создал
+    is_shared = Column(Integer, default=0)  # 0/1
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_by = Column(String)
+    updated_by = Column(String)
 
 # ===== КЛАСС ДЛЯ РАБОТЫ С БД (СОВМЕСТИМЫЙ СО СТАРЫМ КОДОМ) =====
 class DeviceDB:
@@ -464,34 +491,6 @@ class DeviceDB:
             'executed_at': command.executed_at.isoformat() if command.executed_at else None,
             'executed_by': command.executed_by
         }
-
-class AnsibleHistory(Base):
-    __tablename__ = 'ansible_history'
-
-    id = Column(Integer, primary_key=True)
-    playbook_name = Column(String)
-    device_ids = Column(Text)  # JSON строка
-    extra_vars = Column(Text)  # JSON строка
-    executed_by = Column(String)
-    executed_at = Column(DateTime, default=datetime.now)
-    success = Column(Integer)  # 0/1
-    stdout = Column(Text)
-    stderr = Column(Text)
-
-# Добавить после класса AnsibleHistory
-class Playbook(Base):
-    __tablename__ = 'playbooks'
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False)
-    content = Column(Text, nullable=False)
-    description = Column(String, default='')
-    owner = Column(String, nullable=False)  # кто создал
-    is_shared = Column(Integer, default=0)  # 0/1
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    created_by = Column(String)
-    updated_by = Column(String)
 
 # ===== ГЛОБАЛЬНЫЙ ЭКЗЕМПЛЯР =====
 db = DeviceDB()
