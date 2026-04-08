@@ -39,7 +39,7 @@ NETWORK_OS_MAP = {
 SSH_COMMON_ARGS = (
     '-o StrictHostKeyChecking=no '
     '-o ConnectTimeout=30 '
-    '-o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512 '
+    '-o KexAlgorithms=diffie-hellman-group14-sha1, diffie-hellman-group-exchange-sha1, diffie-hellman-group14-sha256,diffie-hellman-group16-sha512 '
     '-o HostKeyAlgorithms=+ssh-rsa '
     '-o PubkeyAcceptedAlgorithms=+ssh-rsa'
 )
@@ -88,7 +88,7 @@ def run_playbook(task):
 
     inventory_path = generate_inventory(task['devices_data'])
 
-    cmd = ['ansible-playbook', '-i', inventory_path, playbook_path]
+    cmd = ['ansible-playbook', '-i', inventory_path, playbook_path, '--ssh-common-args', SSH_COMMON_ARGS]
     if task.get('extra_vars'):
         cmd.extend(['--extra-vars', json.dumps(task['extra_vars'])])
 
