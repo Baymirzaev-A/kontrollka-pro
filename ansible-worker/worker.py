@@ -39,7 +39,7 @@ NETWORK_OS_MAP = {
 SSH_COMMON_ARGS = (
     '-o StrictHostKeyChecking=no '
     '-o ConnectTimeout=30 '
-    '-o KexAlgorithms=diffie-hellman-group14-sha1, diffie-hellman-group-exchange-sha1, diffie-hellman-group14-sha256,diffie-hellman-group16-sha512 '
+    '-o KexAlgorithms=diffie-hellman-group14-sha1, diffie-hellman-group16-sha512,diffie-hellman-group15-sha512,diffie-hellman-group-exchange-sha256, diffie-hellman-group14-sha256 '
     '-o HostKeyAlgorithms=+ssh-rsa '
     '-o PubkeyAcceptedAlgorithms=+ssh-rsa'
 )

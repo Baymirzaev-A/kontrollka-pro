@@ -69,7 +69,7 @@
         const response = await fetch(`/ansible/api/playbooks/${playbookId}/run`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({device_ids: [1]})
+            body: JSON.stringify({device_ids: [2]})
         });
         const data = await response.json();
 
