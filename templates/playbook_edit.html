@@ -5,12 +5,25 @@
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h2>✏️ Редактировать: {{ playbook.name }}</h2>
+        <h2>✏️ Редактировать playbook</h2>
         <a href="/ansible" class="btn btn-secondary">← Назад</a>
     </div>
 
     <div style="margin-top: 1rem;">
-        <textarea id="playbook-content" style="width: 100%; height: 400px; font-family: monospace; padding: 1rem;">{{ playbook.content }}</textarea>
+        <div style="margin-bottom: 1rem;">
+            <label for="playbook-name" style="display: block; margin-bottom: 0.5rem;">Название:</label>
+            <input type="text" id="playbook-name" value="{{ playbook.name }}" style="width: 100%; padding: 0.5rem;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label for="playbook-description" style="display: block; margin-bottom: 0.5rem;">Описание:</label>
+            <input type="text" id="playbook-description" value="{{ playbook.description }}" style="width: 100%; padding: 0.5rem;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label for="playbook-content" style="display: block; margin-bottom: 0.5rem;">Содержимое:</label>
+            <textarea id="playbook-content" style="width: 100%; height: 400px; font-family: monospace; padding: 1rem;">{{ playbook.content }}</textarea>
+        </div>
     </div>
 
     <div style="margin-top: 1rem;">
@@ -23,13 +36,31 @@
     const playbookId = {{ playbook.id }};
 
     async function savePlaybook() {
+        const name = document.getElementById('playbook-name').value;
+        const description = document.getElementById('playbook-description').value;
         const content = document.getElementById('playbook-content').value;
-        await fetch(`/ansible/api/playbooks/${playbookId}`, {
+
+        if (!name) {
+            alert('❌ Название playbook обязательно');
+            return;
+        }
+
+        const response = await fetch(`/ansible/api/playbooks/${playbookId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({content: content})
+            body: JSON.stringify({
+                name: name,
+                description: description,
+                content: content,
+                is_shared: false
+            })
         });
-        alert('✅ Playbook сохранён');
+
+        if (response.ok) {
+            alert('✅ Playbook сохранён');
+        } else {
+            alert('❌ Ошибка сохранения');
+        }
     }
 
     async function runPlaybook() {
@@ -38,7 +69,7 @@
         const response = await fetch(`/ansible/api/playbooks/${playbookId}/run`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
+            body: JSON.stringify({device_ids: []})
         });
         const data = await response.json();
 
