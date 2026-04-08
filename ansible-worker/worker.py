@@ -4,6 +4,13 @@ import subprocess
 import tempfile
 import os
 import yaml
+import logging
+
+# НАСТРОЙКА ЛОГИРОВАНИЯ
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 r = redis.Redis(host='redis', port=6379, decode_responses=True)
 
@@ -100,13 +107,13 @@ def run_playbook(task):
 
 
 def main():
-    print("Ansible Worker started (universal mode)")
+    logging.info("Ansible Worker started (universal mode)")
     while True:
         task_data = r.blpop('ansible:tasks', timeout=1)
         if task_data:
             _, task_json = task_data
             task = json.loads(task_json)
-            print(f"Running: {task['playbook_name']} on {len(task['devices_data'])} devices")
+            logging.info(f"Running: {task['playbook_name']} on {len(task['devices_data'])} devices")
             result = run_playbook(task)
             r.set(f'ansible:result:{task["task_id"]}', json.dumps(result), ex=3600)
 
