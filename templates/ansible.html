@@ -81,22 +81,43 @@
     function runPlaybook(id) {
         if (!confirm(`Запустить playbook?`)) return;
 
-        // TODO: добавить выбор устройств
         fetch(`/ansible/api/playbooks/${id}/run`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({device_ids: []})  // пустой массив = все устройства
+            body: JSON.stringify({device_ids: [1]})  // ID устройства
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('✅ Playbook выполнен успешно');
-                console.log(data.stdout);
-            } else {
-                alert('❌ Ошибка: ' + (data.error || data.stderr));
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => { throw new Error(`HTTP ${response.status}: ${text.substring(0, 200)}`); });
             }
+            return response.json();
         })
-        .catch(error => alert('Ошибка: ' + error));
+        .then(data => {
+            if (!data.task_id) {
+                alert('Ошибка: не получен ID задачи');
+                return;
+            }
+
+            const taskId = data.task_id;
+            alert(`✅ Playbook запущен (ID: ${taskId}). Результат будет в консоли.`);
+            console.log(`Task ID: ${taskId}`);
+
+            // Проверяем результат через 5 секунд
+            setTimeout(async () => {
+                const res = await fetch(`/ansible/api/playbooks/task/${taskId}/status`);
+                const result = await res.json();
+                console.log('Result:', result);
+                if (result.success) {
+                    console.log('STDOUT:', result.stdout);
+                } else {
+                    console.error('ERROR:', result.stderr);
+                }
+            }, 5000);
+        })
+        .catch(error => {
+            alert('❌ Ошибка: ' + error.message);
+            console.error(error);
+        });
     }
 
     function deletePlaybook(id) {

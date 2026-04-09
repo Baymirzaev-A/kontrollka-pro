@@ -85,10 +85,18 @@ def run_playbook(playbook_id):
     data = request.json
     device_ids = data.get('device_ids', [])
 
-    devices_data = [db.get_device(id) for id in device_ids if db.get_device(id)]
+    # Получаем устройства
+    if device_ids:
+        devices_data = [db.get_device(id) for id in device_ids if db.get_device(id)]
+    else:
+        devices_data = db.get_all_devices()
 
+    if not devices_data:
+        return jsonify({'success': False, 'error': 'Нет устройств для выполнения'}), 400
+
+    task_id = str(uuid.uuid4())
     task = {
-        'task_id': str(uuid.uuid4()),
+        'task_id': task_id,
         'playbook_id': playbook_id,
         'playbook_name': playbook['name'],
         'playbook_content': playbook['content'],
@@ -97,15 +105,19 @@ def run_playbook(playbook_id):
         'executed_by': session.get('username')
     }
 
+    # Отправляем задачу в очередь
     r.lpush('ansible:tasks', json.dumps(task))
 
-    for _ in range(60):
-        result = r.get(f'ansible:result:{task["task_id"]}')
-        if result:
-            return jsonify(json.loads(result))
+    # Возвращаем task_id сразу, не ждем результат
+    return jsonify({'task_id': task_id, 'status': 'started'})
 
-    return jsonify({'success': False, 'error': 'Timeout'})
-
+@ansible_bp.route('/api/playbooks/task/<task_id>/status', methods=['GET'])
+def get_task_status(task_id):
+    """Получить статус выполнения задачи"""
+    result = r.get(f'ansible:result:{task_id}')
+    if result:
+        return jsonify(json.loads(result))
+    return jsonify({'status': 'running', 'task_id': task_id})
 
 @ansible_bp.route('/playbook/<int:playbook_id>')
 def edit_playbook_page(playbook_id):

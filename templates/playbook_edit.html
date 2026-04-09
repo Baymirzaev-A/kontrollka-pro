@@ -66,18 +66,74 @@
     async function runPlaybook() {
         if (!confirm('Запустить playbook?')) return;
 
-        const response = await fetch(`/ansible/api/playbooks/${playbookId}/run`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({device_ids: [2]})
-        });
-        const data = await response.json();
+        const deviceId = document.getElementById('device-id') ? document.getElementById('device-id').value : 1;
 
-        if (data.success) {
-            alert('✅ Playbook выполнен успешно');
-            console.log(data.stdout);
-        } else {
-            alert('❌ Ошибка: ' + (data.error || data.stderr));
+        try {
+            // 1. Запускаем playbook
+            const response = await fetch(`/ansible/api/playbooks/${playbookId}/run`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({device_ids: [parseInt(deviceId)]})
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                alert(`Ошибка ${response.status}: ${text.substring(0, 200)}`);
+                return;
+            }
+
+            const data = await response.json();
+
+            if (!data.task_id) {
+                alert('Ошибка: не получен ID задачи');
+                return;
+            }
+
+            const taskId = data.task_id;
+            console.log('Task started:', taskId);
+
+            // 2. Ждем результат с проверкой каждые 2 секунды
+            let attempts = 0;
+            const maxAttempts = 60; // 2 минуты максимум
+
+            const checkInterval = setInterval(async () => {
+                attempts++;
+
+                try {
+                    const statusRes = await fetch(`/ansible/api/playbooks/task/${taskId}/status`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'running') {
+                        console.log(`Waiting... ${attempts}/${maxAttempts}`);
+                        return;
+                    }
+
+                    // Получили результат
+                    clearInterval(checkInterval);
+
+                    if (statusData.success) {
+                        alert('✅ Playbook выполнен успешно');
+                        console.log('STDOUT:', statusData.stdout);
+                        console.log('STDERR:', statusData.stderr);
+                    } else {
+                        const errorMsg = statusData.error || statusData.stderr || 'Неизвестная ошибка';
+                        alert('❌ Ошибка: ' + errorMsg);
+                        console.error('Full response:', statusData);
+                    }
+
+                } catch (err) {
+                    clearInterval(checkInterval);
+                    alert('Ошибка при проверке статуса: ' + err.message);
+                }
+
+                if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    alert('⏰ Таймаут: задача выполняется слишком долго');
+                }
+            }, 2000); // проверка каждые 2 секунды
+
+        } catch (err) {
+            alert('Ошибка: ' + err.message);
         }
     }
 </script>
