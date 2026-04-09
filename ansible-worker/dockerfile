@@ -6,11 +6,19 @@ RUN apt-get update && apt-get install -y \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ansible-galaxy collection install community.network
+# Устанавливаем все популярные коллекции
+RUN ansible-galaxy collection install \
+    ansible.netcommon \
+    huawei.cloudengine \
+    cisco.ios \
+    cisco.nxos \
+    junipernetworks.junos \
+    arista.eos \
+    fortinet.fortios
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir redis pyyaml
+RUN pip install --no-cache-dir redis pyyaml ansible-pylibssh
 
 COPY worker.py .
 

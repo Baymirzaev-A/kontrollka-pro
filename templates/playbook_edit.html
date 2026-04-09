@@ -66,14 +66,12 @@
     async function runPlaybook() {
         if (!confirm('Запустить playbook?')) return;
 
-        const deviceId = document.getElementById('device-id') ? document.getElementById('device-id').value : 1;
-
         try {
-            // 1. Запускаем playbook
+            // 1. Запускаем playbook на всех устройствах
             const response = await fetch(`/ansible/api/playbooks/${playbookId}/run`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({device_ids: [parseInt(deviceId)]})
+                body: JSON.stringify({device_ids: []})  // <-- ПУСТОЙ МАССИВ = ВСЕ УСТРОЙСТВА
             });
 
             if (!response.ok) {
@@ -130,7 +128,7 @@
                     clearInterval(checkInterval);
                     alert('⏰ Таймаут: задача выполняется слишком долго');
                 }
-            }, 2000); // проверка каждые 2 секунды
+            }, 2000);
 
         } catch (err) {
             alert('Ошибка: ' + err.message);

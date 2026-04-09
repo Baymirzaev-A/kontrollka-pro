@@ -84,7 +84,7 @@
         fetch(`/ansible/api/playbooks/${id}/run`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({device_ids: [1]})  // ID устройства
+            body: JSON.stringify({device_ids: []})  // ID устройства
         })
         .then(response => {
             if (!response.ok) {

@@ -14,28 +14,7 @@ logging.basicConfig(
 
 r = redis.Redis(host='redis', port=6379, decode_responses=True)
 
-# Универсальный маппинг вендоров (поддерживает 50+)
-NETWORK_OS_MAP = {
-    'cisco_ios': 'cisco.ios.ios',
-    'cisco_nxos': 'cisco.nxos.nxos',
-    'cisco_xr': 'cisco.iosxr.iosxr',
-    'cisco_asa': 'cisco.asa.asa',
-    'huawei': 'community.network.ce',
-    'huawei_vrpv8': 'community.network.ce',
-    'juniper': 'junipernetworks.junos.junos',
-    'arista_eos': 'arista.eos.eos',
-    'hp_procurve': 'community.network.procurve',
-    'hp_comware': 'community.network.comware',
-    'aruba_os': 'community.network.aruba',
-    'dell_force10': 'community.network.dellos10',
-    'dell_os10': 'community.network.dellos10',
-    'extreme_exos': 'community.network.exos',
-    'fortinet': 'fortinet.fortios.fortios',
-    'eltex': 'community.network.eltex',
-    'linux': 'ansible.builtin.linux',
-}
-
-# Универсальные SSH аргументы для любого оборудования
+# Универсальные SSH аргументы
 SSH_COMMON_ARGS = (
     '-o StrictHostKeyChecking=no '
     '-o ConnectTimeout=30 '
@@ -60,7 +39,6 @@ def generate_inventory(devices_data):
 
     for device in devices_data:
         device_type = device.get('device_type', 'huawei')
-        network_os = NETWORK_OS_MAP.get(device_type, 'ansible.netcommon.default')
 
         # Определяем тип подключения
         if device_type == 'linux':
@@ -71,7 +49,6 @@ def generate_inventory(devices_data):
         inventory['all']['hosts'][device['name']] = {
             'ansible_host': device['host'],
             'ansible_port': device.get('port', 22),
-            'ansible_network_os': network_os,
             'ansible_connection': connection,
         }
 
