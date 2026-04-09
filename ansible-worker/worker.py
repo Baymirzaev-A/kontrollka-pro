@@ -46,7 +46,7 @@ def generate_inventory(devices_data):
         else:
             connection = 'network_cli'
 
-        inventory['all']['hosts'][device['name']] = {
+        inventory['all']['hosts'][device['host']] = {
             'ansible_host': device['host'],
             'ansible_port': device.get('port', 22),
             'ansible_connection': connection,

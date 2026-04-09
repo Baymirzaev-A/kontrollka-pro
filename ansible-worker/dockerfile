@@ -1,20 +1,22 @@
 FROM python:3.13
 
 RUN apt-get update && apt-get install -y \
-    ansible \
     openssh-client \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --upgrade pip && \
+    pip install --upgrade 'ansible>=10.0.0'
+
 # Устанавливаем все популярные коллекции
 RUN ansible-galaxy collection install \
     ansible.netcommon \
-    huawei.cloudengine \
     cisco.ios \
     cisco.nxos \
     junipernetworks.junos \
     arista.eos \
-    fortinet.fortios
+    fortinet.fortios\
+    community.network
 
 WORKDIR /app
 
