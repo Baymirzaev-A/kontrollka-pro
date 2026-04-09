@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Результат выполнения{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>📊 Результат выполнения playbook</h2>
+        <a href="/ansible" class="btn btn-secondary">← Назад к playbook'ам</a>
+    </div>
+
+    <div style="margin-top: 1rem;">
+        <div class="alert alert-info">
+            <strong>ID задачи:</strong> {{ task_id }}
+        </div>
+
+        {% if not_found %}
+            <div class="alert alert-warning">
+                ⏳ Задача еще выполняется или результат не найден. <a href="/ansible">Вернуться</a>
+            </div>
+        {% else %}
+            <div class="alert {% if result.success %}alert-success{% else %}alert-danger{% endif %}">
+                <strong>Статус:</strong> 
+                {% if result.success %}✅ Успешно{% else %}❌ Ошибка{% endif %}
+                {% if result.returncode is defined %} (код возврата: {{ result.returncode }}){% endif %}
+            </div>
+
+            {% if result.stdout %}
+            <div style="margin-top: 1rem;">
+                <h3>📤 STDOUT:</h3>
+                <pre style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 5px; overflow-x: auto; max-height: 400px;">{{ result.stdout }}</pre>
+            </div>
+            {% endif %}
+
+            {% if result.stderr %}
+            <div style="margin-top: 1rem;">
+                <h3>⚠️ STDERR:</h3>
+                <pre style="background: #2d2d2d; color: #f48771; padding: 1rem; border-radius: 5px; overflow-x: auto; max-height: 200px;">{{ result.stderr }}</pre>
+            </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<style>
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: monospace;
+    font-size: 12px;
+}
+</style>
+{% endblock %}

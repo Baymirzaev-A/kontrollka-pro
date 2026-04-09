@@ -80,6 +80,7 @@ services:
         condition: service_started
     networks:
       - kontrollka_network
+
   ansible-worker:
     build: ./ansible-worker
     container_name: kontrollka_ansible_worker

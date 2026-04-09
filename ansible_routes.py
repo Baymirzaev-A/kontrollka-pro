@@ -119,6 +119,17 @@ def get_task_status(task_id):
         return jsonify(json.loads(result))
     return jsonify({'status': 'running', 'task_id': task_id})
 
+
+@ansible_bp.route('/result/<task_id>')
+def result_page(task_id):
+    """Страница с результатом выполнения playbook"""
+    result = r.get(f'ansible:result:{task_id}')
+    if not result:
+        return render_template('result.html', task_id=task_id, result=None, not_found=True)
+
+    result_data = json.loads(result)
+    return render_template('result.html', task_id=task_id, result=result_data, not_found=False)
+
 @ansible_bp.route('/playbook/<int:playbook_id>')
 def edit_playbook_page(playbook_id):
     if session.get('role') != 'admin':
