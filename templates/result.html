@@ -14,33 +14,75 @@
             <strong>ID задачи:</strong> {{ task_id }}
         </div>
 
-        {% if not_found %}
-            <div class="alert alert-warning">
-                ⏳ Задача еще выполняется или результат не найден. <a href="/ansible">Вернуться</a>
-            </div>
-        {% else %}
-            <div class="alert {% if result.success %}alert-success{% else %}alert-danger{% endif %}">
-                <strong>Статус:</strong> 
-                {% if result.success %}✅ Успешно{% else %}❌ Ошибка{% endif %}
-                {% if result.returncode is defined %} (код возврата: {{ result.returncode }}){% endif %}
-            </div>
+        <div id="result-container">
+            {% if not_found %}
+                <div class="alert alert-warning" id="waiting-message">
+                    ⏳ Задача выполняется... автоматическое обновление через 3 секунды
+                </div>
+            {% else %}
+                <div class="alert {% if result.success %}alert-success{% else %}alert-danger{% endif %}">
+                    <strong>Статус:</strong>
+                    {% if result.success %}✅ Успешно{% else %}❌ Ошибка{% endif %}
+                    {% if result.returncode is defined %} (код: {{ result.returncode }}){% endif %}
+                </div>
 
-            {% if result.stdout %}
-            <div style="margin-top: 1rem;">
-                <h3>📤 STDOUT:</h3>
-                <pre style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 5px; overflow-x: auto; max-height: 400px;">{{ result.stdout }}</pre>
-            </div>
-            {% endif %}
+                {% if result.stdout %}
+                <div style="margin-top: 1rem;">
+                    <h3>📤 STDOUT:</h3>
+                    <pre style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 5px; overflow-x: auto; max-height: 400px;">{{ result.stdout }}</pre>
+                </div>
+                {% endif %}
 
-            {% if result.stderr %}
-            <div style="margin-top: 1rem;">
-                <h3>⚠️ STDERR:</h3>
-                <pre style="background: #2d2d2d; color: #f48771; padding: 1rem; border-radius: 5px; overflow-x: auto; max-height: 200px;">{{ result.stderr }}</pre>
-            </div>
+                {% if result.stderr %}
+                <div style="margin-top: 1rem;">
+                    <h3>⚠️ STDERR:</h3>
+                    <pre style="background: #2d2d2d; color: #f48771; padding: 1rem; border-radius: 5px; overflow-x: auto; max-height: 200px;">{{ result.stderr }}</pre>
+                </div>
+                {% endif %}
             {% endif %}
-        {% endif %}
+        </div>
     </div>
 </div>
+
+<script>
+const taskId = '{{ task_id }}';
+const notFound = {{ not_found|lower }};
+
+if (notFound) {
+    let attempts = 0;
+    const maxAttempts = 60; // 60 попыток * 3 секунды = 3 минуты
+
+    function checkStatus() {
+        attempts++;
+        console.log(`Checking status... attempt ${attempts}`);
+
+        fetch(`/ansible/api/playbooks/task/${taskId}/status`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'running') {
+                    // Задача завершена, перезагружаем страницу
+                    window.location.reload();
+                } else if (attempts < maxAttempts) {
+                    // Еще не завершена, проверяем через 3 секунды
+                    setTimeout(checkStatus, 3000);
+                } else {
+                    // Таймаут
+                    const container = document.getElementById('result-container');
+                    container.innerHTML = '<div class="alert alert-danger">⏰ Превышено время ожидания (3 минуты). Задача все еще выполняется. <a href="/ansible">Вернуться</a></div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error checking status:', error);
+                if (attempts < maxAttempts) {
+                    setTimeout(checkStatus, 3000);
+                }
+            });
+    }
+
+    // Начинаем проверку через 3 секунды
+    setTimeout(checkStatus, 3000);
+}
+</script>
 
 <style>
 pre {
