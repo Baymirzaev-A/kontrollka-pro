@@ -1,11 +1,10 @@
 from flask import Blueprint, jsonify, request, session, render_template
 from database import db
-import redis
 import json
 import uuid
+from celery_app import run_playbook_task
 
 ansible_bp = Blueprint('ansible', __name__, url_prefix='/ansible')
-r = redis.Redis(host='redis', port=6379, decode_responses=True)
 
 
 @ansible_bp.route('/')
@@ -94,9 +93,7 @@ def run_playbook(playbook_id):
     if not devices_data:
         return jsonify({'success': False, 'error': 'Нет устройств для выполнения'}), 400
 
-    task_id = str(uuid.uuid4())
-    task = {
-        'task_id': task_id,
+    task_data = {
         'playbook_id': playbook_id,
         'playbook_name': playbook['name'],
         'playbook_content': playbook['content'],
@@ -105,29 +102,50 @@ def run_playbook(playbook_id):
         'executed_by': session.get('username')
     }
 
-    # Отправляем задачу в очередь
-    r.lpush('ansible:tasks', json.dumps(task))
+    # Отправляем задачу в Celery (асинхронно)
+    async_result = run_playbook_task.delay(task_data)
 
-    # Возвращаем task_id сразу, не ждем результат
-    return jsonify({'task_id': task_id, 'status': 'started'})
+    return jsonify({
+        'task_id': async_result.id,
+        'status': 'started'
+    })
+
 
 @ansible_bp.route('/api/playbooks/task/<task_id>/status', methods=['GET'])
 def get_task_status(task_id):
-    """Получить статус выполнения задачи"""
-    result = r.get(f'ansible:result:{task_id}')
-    if result:
-        return jsonify(json.loads(result))
-    return jsonify({'status': 'running', 'task_id': task_id})
+    """Получить статус задачи из Celery"""
+    from celery.result import AsyncResult
+    from celery_app import app as celery_app
+
+    result = AsyncResult(task_id, app=celery_app)
+
+    if result.ready():
+        if result.successful():
+            return jsonify(result.result)
+        else:
+            return jsonify({
+                'success': False,
+                'error': str(result.info),
+                'task_id': task_id
+            })
+    else:
+        return jsonify({
+            'status': 'running',
+            'task_id': task_id
+        })
 
 
 @ansible_bp.route('/result/<task_id>')
 def result_page(task_id):
-    """Страница с результатом выполнения playbook"""
-    result = r.get(f'ansible:result:{task_id}')
-    if not result:
+    from celery.result import AsyncResult
+    from celery_app import app as celery_app
+
+    result = AsyncResult(task_id, app=celery_app)
+
+    if not result.ready():
         return render_template('result.html', task_id=task_id, result=None, not_found=True)
 
-    result_data = json.loads(result)
+    result_data = result.result
     return render_template('result.html', task_id=task_id, result=result_data, not_found=False)
 
 @ansible_bp.route('/playbook/<int:playbook_id>')
