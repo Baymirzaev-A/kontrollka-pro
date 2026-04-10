@@ -82,7 +82,11 @@ services:
       - kontrollka_network
 
   celery-worker:
-    build: .
+    build:
+      context: ./ansible-worker
+      dockerfile: Dockerfile
+    container_name: kontrollka_celery_worker
+    restart: always
     deploy:
       mode: replicated
       replicas: ${CELERY_WORKERS:-3}
@@ -91,10 +95,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
       - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
-      - CELERY_WORKERS=${CELERY_WORKERS:-3}
-      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-5}
     volumes:
-      - ./:/app
+      - ./ansible-worker:/app
     depends_on:
       - redis
     networks:
