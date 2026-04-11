@@ -22,6 +22,4 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir redis pyyaml ansible-pylibssh
 
-COPY worker.py .
-
 CMD ["python", "worker.py"]
