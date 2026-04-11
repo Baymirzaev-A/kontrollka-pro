@@ -84,7 +84,7 @@ services:
   celery-worker:
     build:
       context: ./ansible-worker
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
     container_name: kontrollka_celery_worker
     restart: always
     deploy:
