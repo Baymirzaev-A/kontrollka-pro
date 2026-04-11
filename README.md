@@ -278,11 +278,11 @@ mkdir certs
 ```
 4. Запуск контейнеров
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 ```
 5. Проверка работы
 ```bash
-docker-compose -f docker-compose.prod.yml logs -f kontrollka
+docker-compose logs -f kontrollka
 Приложение будет доступно по адресу: https://ваш-сервер:5000
 ```
 
@@ -395,9 +395,9 @@ pip install -r requirements.txt --upgrade
 ```
 Через Docker
 ```bash
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml pull
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose down
+docker-compose pull
+docker-compose up -d --build
 ```
 
 ### 🛡️ Безопасность

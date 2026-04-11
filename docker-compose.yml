@@ -23,6 +23,11 @@ services:
     image: redis:alpine
     container_name: kontrollka_redis
     restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     volumes:
       - redis_data:/data
     networks:
@@ -78,6 +83,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      celery-worker:
+        condition: service_started
     networks:
       - kontrollka_network
 
@@ -98,7 +105,8 @@ services:
     volumes:
       - ./ansible-worker:/app
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - kontrollka_network
 volumes:
