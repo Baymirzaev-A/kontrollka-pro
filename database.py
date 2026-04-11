@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -58,6 +59,33 @@ class CommandHistory(Base):
 
     device = relationship('Device', back_populates='commands')
 
+class AnsibleHistory(Base):
+    __tablename__ = 'ansible_history'
+
+    id = Column(Integer, primary_key=True)
+    playbook_name = Column(String)
+    device_ids = Column(Text)  # JSON строка
+    extra_vars = Column(Text)  # JSON строка
+    executed_by = Column(String)
+    executed_at = Column(DateTime, default=datetime.now)
+    success = Column(Integer)  # 0/1
+    stdout = Column(Text)
+    stderr = Column(Text)
+
+# Добавить после класса AnsibleHistory
+class Playbook(Base):
+    __tablename__ = 'playbooks'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    content = Column(Text, nullable=False)
+    description = Column(String, default='')
+    owner = Column(String, nullable=False)  # кто создал
+    is_shared = Column(Integer, default=0)  # 0/1
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_by = Column(String)
+    updated_by = Column(String)
 
 # ===== КЛАСС ДЛЯ РАБОТЫ С БД (СОВМЕСТИМЫЙ СО СТАРЫМ КОДОМ) =====
 class DeviceDB:
@@ -93,6 +121,7 @@ class DeviceDB:
                 purpose=purpose
             )
             session.add(device)
+
 
     # ========== МЕТОДЫ ДЛЯ УСТРОЙСТВ ==========
 
@@ -307,6 +336,126 @@ class DeviceDB:
         finally:
             session.close()
 
+    def save_ansible_history(self, playbook_name, device_ids, extra_vars, executed_by, success, stdout, stderr):
+        """Сохраняет историю запуска Ansible playbook"""
+        session = SessionLocal()
+        try:
+            history = AnsibleHistory(
+                playbook_name=playbook_name,
+                device_ids=json.dumps(device_ids) if device_ids else '[]',
+                extra_vars=json.dumps(extra_vars) if extra_vars else '{}',
+                executed_by=executed_by,
+                success=1 if success else 0,
+                stdout=stdout[:10000] if stdout else '',
+                stderr=stderr[:10000] if stderr else ''
+            )
+            session.add(history)
+            session.commit()
+        finally:
+            session.close()
+
+    # ========== МЕТОДЫ ДЛЯ PLAYBOOKS ==========
+
+    def get_playbooks(self, username, user_role):
+        """Получить список доступных плейбуков (только для admin)"""
+        if user_role != 'admin':
+            return []
+
+        session = SessionLocal()
+        try:
+            query = session.query(Playbook).order_by(Playbook.name)
+            playbooks = query.all()
+            return [{
+                'id': p.id,
+                'name': p.name,
+                'description': p.description,
+                'owner': p.owner,
+                'is_shared': p.is_shared,
+                'updated_at': p.updated_at.isoformat() if p.updated_at else None
+            } for p in playbooks]
+        finally:
+            session.close()
+
+    def get_playbook(self, playbook_id):
+        """Получить содержимое плейбука по ID"""
+        session = SessionLocal()
+        try:
+            p = session.query(Playbook).filter(Playbook.id == playbook_id).first()
+            if not p:
+                return None
+            return {
+                'id': p.id,
+                'name': p.name,
+                'content': p.content,
+                'description': p.description,
+                'owner': p.owner,
+                'is_shared': p.is_shared
+            }
+        finally:
+            session.close()
+
+    def get_playbook_by_name(self, name):
+        """Получить плейбук по имени"""
+        session = SessionLocal()
+        try:
+            p = session.query(Playbook).filter(Playbook.name == name).first()
+            if not p:
+                return None
+            return {
+                'id': p.id,
+                'name': p.name,
+                'content': p.content,
+                'description': p.description,
+                'owner': p.owner,
+                'is_shared': p.is_shared
+            }
+        finally:
+            session.close()
+
+    def save_playbook(self, playbook_id, name, content, description, is_shared, username):
+        """Создать или обновить плейбук"""
+        session = SessionLocal()
+        try:
+            if playbook_id:
+                # Обновление
+                p = session.query(Playbook).filter(Playbook.id == playbook_id).first()
+                if p:
+                    p.name = name
+                    p.content = content
+                    p.description = description
+                    p.is_shared = 1 if is_shared else 0
+                    p.updated_by = username
+                    session.commit()
+                    return p.id
+            else:
+                # Создание
+                p = Playbook(
+                    name=name,
+                    content=content,
+                    description=description,
+                    owner=username,
+                    created_by=username,
+                    is_shared=1 if is_shared else 0
+                )
+                session.add(p)
+                session.commit()
+                return p.id
+        finally:
+            session.close()
+
+    def delete_playbook(self, playbook_id):
+        """Удалить плейбук"""
+        session = SessionLocal()
+        try:
+            p = session.query(Playbook).filter(Playbook.id == playbook_id).first()
+            if p:
+                session.delete(p)
+                session.commit()
+                return True
+            return False
+        finally:
+            session.close()
+
     # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
     def _device_to_dict(self, device):
@@ -342,3 +491,6 @@ class DeviceDB:
             'executed_at': command.executed_at.isoformat() if command.executed_at else None,
             'executed_by': command.executed_by
         }
+
+# ===== ГЛОБАЛЬНЫЙ ЭКЗЕМПЛЯР =====
+db = DeviceDB()

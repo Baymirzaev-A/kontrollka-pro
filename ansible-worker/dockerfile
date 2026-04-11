@@ -1,0 +1,27 @@
+FROM python:3.13
+
+RUN apt-get update && apt-get install -y \
+    openssh-client \
+    openssh-server \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip && \
+    pip install 'celery==5.6.0' && \
+    pip install --upgrade 'ansible>=10.0.0'
+
+# Устанавливаем все популярные коллекции
+RUN ansible-galaxy collection install ansible.netcommon || true; \
+    ansible-galaxy collection install cisco.ios || true; \
+    ansible-galaxy collection install cisco.nxos || true; \
+    ansible-galaxy collection install junipernetworks.junos || true; \
+    ansible-galaxy collection install arista.eos || true; \
+    ansible-galaxy collection install fortinet.fortios || true; \
+    ansible-galaxy collection install community.network || true
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir redis pyyaml ansible-pylibssh
+
+COPY worker.py .
+
+CMD ["python", "worker.py"]

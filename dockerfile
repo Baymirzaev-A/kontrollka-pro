@@ -23,5 +23,5 @@ RUN mkdir -p data logs certs ssh_keys
 ENV PYTHONUNBUFFERED=1
 
 # Запуск через Gunicorn
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
-#CMD ["gunicorn", "-c", "gunicorn.conf.py", "--certfile=/app/certs/cert.pem", "--keyfile=/app/certs/key.pem", "app:app"]
+#CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "--certfile=/app/certs/cert.pem", "--keyfile=/app/certs/key.pem", "app:app"]

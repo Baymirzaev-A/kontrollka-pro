@@ -32,9 +32,8 @@ ALLOWED_EXTENSIONS = {'py'}
 
 app = Flask(__name__)
 
-
-
-
+from ansible_routes import ansible_bp
+app.register_blueprint(ansible_bp)
 
 
 # ===== КЕШ СТАТУСОВ =====
@@ -1711,6 +1710,16 @@ def import_devices():
 
             except Exception as e:
                 results['errors'].append(f"Строка {idx + 2}: {str(e)}")
+
+        # Сбрасываем кеш устройств
+        invalidate_devices_cache()
+
+        # Отправляем WebSocket уведомление всем клиентам
+        socketio.emit('devices_updated', {
+            'action': 'import',
+            'added': results['added'],
+            'timestamp': datetime.now().isoformat()
+        })
 
         return jsonify({'success': True, **results})
 

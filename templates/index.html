@@ -78,7 +78,39 @@
                     </td>
                     <td>{{ device.host }}</td>
                     <td>{{ device.port }}</td>
-                    <td><span class="badge" style="background: #6c757d; color: white;">{{ device.device_type }}</span></td>
+                    <td>
+                        <span class="badge" style="background: #6c757d; color: white;">
+                            {% if device.device_type == 'cisco_ios' %}Cisco IOS
+                            {% elif device.device_type == 'cisco_nxos' %}Cisco NX-OS
+                            {% elif device.device_type == 'cisco_xr' %}Cisco IOS-XR
+                            {% elif device.device_type == 'cisco_asa' %}Cisco ASA
+                            {% elif device.device_type == 'huawei' %}Huawei VRP
+                            {% elif device.device_type == 'huawei_vrpv8' %}Huawei CE
+                            {% elif device.device_type == 'huawei_olt' %}Huawei OLT
+                            {% elif device.device_type == 'juniper' %}Juniper JunOS
+                            {% elif device.device_type == 'arista_eos' %}Arista EOS
+                            {% elif device.device_type == 'hp_procurve' %}HP ProCurve
+                            {% elif device.device_type == 'hp_comware' %}HP Comware
+                            {% elif device.device_type == 'aruba_os' %}ArubaOS
+                            {% elif device.device_type == 'dell_force10' %}Dell Force10
+                            {% elif device.device_type == 'dell_os10' %}Dell OS10
+                            {% elif device.device_type == 'dell_powerconnect' %}Dell PowerConnect
+                            {% elif device.device_type == 'extreme_exos' %}Extreme EXOS
+                            {% elif device.device_type == 'extreme_ers' %}Extreme ERS
+                            {% elif device.device_type == 'extreme_nos' %}Extreme NOS
+                            {% elif device.device_type == 'fortinet' %}FortiGate
+                            {% elif device.device_type == 'alcatel_sros' %}Nokia SR-OS
+                            {% elif device.device_type == 'brocade_fastiron' %}Brocade FastIron
+                            {% elif device.device_type == 'brocade_netiron' %}Brocade NetIron
+                            {% elif device.device_type == 'eltex' %}Eltex ESP
+                            {% elif device.device_type == 'eltex_esr' %}Eltex ESR
+                            {% elif device.device_type == 'mikrotik_routeros' %}MikroTik RouterOS
+                            {% elif device.device_type == 'linux' %}Linux
+                            {% elif device.device_type == 'generic_termserver' %}Generic Terminal
+                            {% else %}{{ device.device_type }}
+                            {% endif %}
+                        </span>
+                    </td>
                     <td>
                         <span class="badge purpose-{{ device.purpose }}">
                             {% if device.purpose == 'router' %}🖧 Роутер
