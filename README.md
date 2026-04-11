@@ -19,12 +19,14 @@
 
 ![Конфигурации](images/configs.jpg)
 
+![Интеграция Ansible](images/ansible_playbook.jpg)
+
 ## 🚀 Ключевые возможности
 
 ### Управление устройствами и серверами
 - CRUD операции с устройствами и серверами
 - Отдельные учетные данные для серверов (логин/пароль/SSH-ключ)
-- Групповые команды на нескольких устройствах (до 40 за раз)
+- Групповые команды на нескольких устройствах (до 40 за раз, количество можно изменить)
 - Python-скрипты для автоматизации
 - Импорт устройств из CSV/Excel с предпросмотром
 - Поиск и фильтрация по имени, IP, описанию, назначению (роутер/коммутатор/файрвол/сервер)
@@ -60,7 +62,9 @@
 - Пагинация для истории и конфигураций
 - Готов к работе с PostgreSQL и Redis
 - Поддержка Gunicorn + eventlet для production
+- Асинхронное выполнение Ansible playbook'ов через Celery — веб-интерфейс не блокируется
 
+### ВНИМАНИЕ! ИНТЕГРАЦИЯ С ANSIBLE НАХОДИТСЯ НА СТАДИИ ТЕСТИРОВАНИЯ!
 ---
 
 ## 🏗️ Технологии
@@ -69,6 +73,7 @@
 |-----------|------------|
 | **Backend** | Flask 3.1.3, SQLAlchemy 2.0.48 |
 | **Сетевое взаимодействие** | Netmiko 4.6.0 (60+ вендоров) |
+| **Асинхронные задачи** | Celery 5.6.0, Redis (брокер/бекенд) |
 | **База данных** | SQLite (разработка) / PostgreSQL (production) |
 | **WebSocket** | Flask-SocketIO, eventlet 0.40.3 |
 | **Аутентификация** | LDAP3, python-dotenv |
@@ -111,11 +116,11 @@
 
 ## 👥 Ролевая модель
 
-| Роль | Консоль | Скрипты | Конфигурации | Управление пользователями | Аудит |
-|------|---------|---------|--------------|---------------------------|-------|
-| **Admin** | ✅ Выполнение команд | ✅ Запуск и управление | ✅ Полный доступ | ✅ | ✅ |
-| **Operator** | ✅ Выполнение команд | ✅ Запуск скриптов | ✅ Просмотр и сохранение | ❌ | ❌ |
-| **Viewer** | ✅ Выполнение команд | ❌ Не видит вкладку | ✅ Просмотр | ❌ | ❌ |
+| Роль | Консоль | Скрипты | Конфигурации | Управление пользователями | Аудит | Ansible |
+|------|---------|---------|--------------|---------------------------|-------|---------|
+| **Admin** | ✅ Выполнение команд | ✅ Запуск и управление | ✅ Полный доступ | ✅ | ✅ | ✅ |
+| **Operator** | ✅ Выполнение команд | ✅ Запуск скриптов | ✅ Просмотр и сохранение | ❌ | ❌ | ❌ |
+| **Viewer** | ✅ Выполнение команд | ❌ Не видит вкладку | ✅ Просмотр | ❌ | ❌ | ❌ |
 
 ### Маппинг групп Active Directory
 
@@ -172,18 +177,10 @@ PORT=5000
 # LDAP_BASE_DN=DC=company,DC=local
 # LDAP_BIND_USER=CN=service,OU=Users,DC=company,DC=local
 # LDAP_BIND_PASSWORD=password
+
 ```
 
 # 📦 Установка и настройка
-
-Требования
-Python 3.13 или выше
-
-Docker (опционально, для контейнерного развертывания)
-
-PostgreSQL (опционально, для production)
-
-Redis (опционально, для масштабирования)
 
 ## Вариант 1: Локальная установка (разработка)
 1. Клонирование репозитория
@@ -327,86 +324,25 @@ gunicorn.conf.py
 ```python
 bind = ["0.0.0.0:5000", "0.0.0.0:5001", "0.0.0.0:5002", "0.0.0.0:5003"] - для большего количества воркеров
 ```
+3. Для обеспечения отзывчивости веб-интерфейса при выполнении длительных операций (Ansible playbook'и могут выполняться от 30 секунд до 10+ минут) в проекте используется асинхронная очередь задач на базе Celery и Redis.
+Преимущества:
+Неблокирующая архитектура — веб-сервер не ждет выполнения playbook'ов
+Параллельное выполнение — до 15 задач одновременно (3 воркера × 5 потоков)
+Отказоустойчивость — Celery автоматически перезапускает упавшие задачи
+Масштабирование — количество воркеров и потоков настраивается через .env:
 
-## Вариант 3: Production-установка с Gunicorn
-1. Установка PostgreSQL и Redis
 ```bash
-# Ubuntu / Debian
-sudo apt update
-sudo apt install postgresql redis-server -y
-
-# Запуск сервисов
-sudo systemctl start postgresql redis
-sudo systemctl enable postgresql redis
+CELERY_WORKERS=3
+CELERY_CONCURRENCY=5
 ```
-2. Создание базы данных
-```bash
-sudo -u postgres psql -c "CREATE DATABASE kontrollka;"
-sudo -u postgres psql -c "CREATE USER kontrollka WITH PASSWORD 'your_password';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE kontrollka TO kontrollka;"
-```
-3. Установка приложения
-```bash
-# Клонирование
-git clone https://github.com/Baymirzaev-A/kontrollka-pro.git
-cd kontrollka-pro
 
-# Виртуальное окружение
-python3.12 -m venv venv
-source venv/bin/activate
-
-# Зависимости
-pip install -r requirements.txt
-
-# Настройка
-cp .env.template .env
-nano .env  # отредактируйте DATABASE_URL, REDIS_URL
-```
-4. Настройка HTTPS
-```bash
-# Создание папки для сертификатов
-mkdir certs
-
-# Поместите ваши сертификаты в папку certs/
-# certs/cert.pem - сертификат
-# certs/key.pem - приватный ключ
-```
-5. Запуск через Gunicorn
-```bash
-gunicorn -k eventlet -w 4 app:app -b 0.0.0.0:5000
-```
-6. Настройка автозапуска (systemd)
-Создайте файл /etc/systemd/system/kontrollka.service:
-
-```ini
-[Unit]
-Description=Kontrollka PRO
-After=network.target postgresql.service redis.service
-
-[Service]
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/kontrollka-pro
-EnvironmentFile=/opt/kontrollka-pro/.env
-ExecStart=/opt/kontrollka-pro/venv/bin/gunicorn -k eventlet -w 4 app:app -b 0.0.0.0:5000
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-Запустите сервис:
-
-bash
-sudo systemctl enable kontrollka
-sudo systemctl start kontrollka
-```
 ### 🔧 Настройка после установки
 Первый вход
 Откройте браузер по адресу https://ваш-сервер:5000 (или http://... если HTTPS не настроен)
 
 Войдите с учетными данными: admin / admin
 
-Сразу смените пароль администратора (через интерфейс или БД)
+!РЕКОМЕНДУЕТСЯ ИСПОЛЬЗОВАТЬ ДОМЕННЫЕ УЗ ЧЕРЕЗ НАСТРОЙКУ .ENV В ЧАСТИ LDAP!
 
 Добавление устройств
 Нажмите "➕ Добавить устройство"
