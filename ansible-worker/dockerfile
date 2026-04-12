@@ -21,5 +21,3 @@ RUN ansible-galaxy collection install ansible.netcommon || true; \
 WORKDIR /app
 
 RUN pip install --no-cache-dir redis pyyaml ansible-pylibssh
-
-CMD ["python", "worker.py"]

@@ -1,14 +1,54 @@
-from celery import Celery
+import time
 import os
 import redis
 import json
 import subprocess
 import tempfile
 import yaml
+
 import logging
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def wait_for_redis():
+    """Ждём готовности Redis перед созданием Celery"""
+    redis_url = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+    max_retries = 30
+
+    # Парсим хост и порт
+    if redis_url.startswith('redis://'):
+        parts = redis_url.replace('redis://', '').split(':')
+        host = parts[0]
+        port = int(parts[1].split('/')[0]) if len(parts) > 1 else 6379
+    else:
+        host = 'redis'
+        port = 6379
+
+    for i in range(max_retries):
+        try:
+            r = redis.Redis(host=host, port=port, socket_connect_timeout=2)
+            if r.ping():
+                logger.info(f"Redis is ready after {i + 1} attempts")
+                return True
+        except Exception as e:
+            if i < max_retries - 1:
+                logger.info(f"Waiting for Redis ({i + 1}/{max_retries}): {e}")
+                time.sleep(1)
+            else:
+                logger.error(f"Redis not available after {max_retries} attempts")
+                raise
+
+    return True
+
+
+# Ждём Redis перед созданием Celery
+wait_for_redis()
+
+# Дальше ваш существующий код
+from celery import Celery
 
 # Celery конфигурация
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
@@ -70,7 +110,7 @@ def generate_inventory(devices_data):
 def run_playbook_task(self, task_data):
     """Celery задача для выполнения playbook"""
     task_id = self.request.id
-    logging.info(f"Task {task_id}: Starting playbook {task_data.get('playbook_name')}")
+    logger.info(f"Task {task_id}: Starting playbook {task_data.get('playbook_name')}")
 
     playbook_path = None
     inventory_path = None
@@ -89,7 +129,7 @@ def run_playbook_task(self, task_data):
         if task_data.get('extra_vars'):
             cmd.extend(['--extra-vars', json.dumps(task_data['extra_vars'])])
 
-        logging.info(f"Task {task_id}: Running command: {' '.join(cmd)}")
+        logger.info(f"Task {task_id}: Running command: {' '.join(cmd)}")
 
         # Выполняем
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -103,14 +143,14 @@ def run_playbook_task(self, task_data):
         }
 
     except subprocess.TimeoutExpired:
-        logging.error(f"Task {task_id}: Timeout")
+        logger.error(f"Task {task_id}: Timeout")
         return {
             'success': False,
             'error': 'Timeout after 300 seconds',
             'task_id': task_id
         }
     except Exception as e:
-        logging.error(f"Task {task_id}: Error - {str(e)}")
+        logger.error(f"Task {task_id}: Error - {str(e)}")
         return {
             'success': False,
             'error': str(e),
@@ -120,4 +160,4 @@ def run_playbook_task(self, task_data):
         for path in [playbook_path, inventory_path]:
             if path and os.path.exists(path):
                 os.unlink(path)
-                logging.debug(f"Task {task_id}: Removed temp file {path}")
+                logger.debug(f"Task {task_id}: Removed temp file {path}")
