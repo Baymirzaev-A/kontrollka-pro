@@ -5,9 +5,6 @@ import uuid
 
 ansible_bp = Blueprint('ansible', __name__, url_prefix='/ansible')
 
-@ansible_bp.route('/api/playbooks/<int:playbook_id>/run', methods=['POST'])
-def run_playbook(playbook_id):
-    from celery_app import run_playbook_task
 @ansible_bp.route('/')
 def index():
     return render_template('ansible.html')
@@ -75,6 +72,8 @@ def delete_playbook(playbook_id):
 
 @ansible_bp.route('/api/playbooks/<int:playbook_id>/run', methods=['POST'])
 def run_playbook(playbook_id):
+    from celery_app import run_playbook_task
+
     if session.get('role') != 'admin':
         return jsonify({'error': 'Forbidden'}), 403
 
