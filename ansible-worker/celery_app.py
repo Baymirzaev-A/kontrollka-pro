@@ -67,6 +67,64 @@ app.conf.update(
     task_acks_late=True,
 )
 
+# ===== ПЛАНИРОВЩИК UCMDB (РАЗ В НЕДЕЛЮ) =====
+from celery.schedules import crontab
+
+
+def parse_cron(cron_string: str):
+    """Преобразует строку cron в crontab объект"""
+    parts = cron_string.split()
+    if len(parts) != 5:
+        return crontab(day_of_week=0, hour=2, minute=0)  # дефолт: воскресенье 2:00
+
+    minute, hour, day_of_month, month, day_of_week = parts
+    return crontab(
+        minute=minute if minute != '*' else '*',
+        hour=hour if hour != '*' else '*',
+        day_of_month=day_of_month if day_of_month != '*' else '*',
+        month=month if month != '*' else '*',
+        day_of_week=day_of_week if day_of_week != '*' else '*'
+    )
+
+
+# ===== ЗАДАЧИ ДЛЯ DARIA (МАССОВЫЙ SNMP СБОР) =====
+@app.task(bind=True, name='daria.tasks.collect_all_devices')
+def collect_all_devices_task(self):
+    """Массовый сбор SNMP данных по всем устройствам"""
+    import requests
+    try:
+        response = requests.post(
+            'http://daria-api:8000/api/discovery/collect-all',
+            timeout=5
+        )
+        logger.info(f"DARIA collect all started: {response.json()}")
+        return {'status': 'started', 'response': response.json()}
+    except Exception as e:
+        logger.error(f"DARIA collect all failed: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
+
+@app.task(bind=True, name='daria.tasks.collect_device')
+def collect_device_task(self, device_id: int):
+    """Сбор SNMP данных по одному устройству"""
+    import requests
+    try:
+        response = requests.post(
+            f'http://daria-api:8000/api/discovery/collect/{device_id}',
+            timeout=60
+        )
+        return {'status': 'started', 'response': response.json()}
+    except Exception as e:
+        logger.error(f"DARIA collect device {device_id} failed: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
+app.conf.beat_schedule = {
+    'daria-collect-weekly': {
+        'task': 'daria.tasks.collect_all_devices',
+        'schedule': parse_cron(os.environ.get('DARIA_SCHEDULE', '0 2 * * 0')),
+    },
+}
+
 # SSH аргументы
 SSH_COMMON_ARGS = (
     '-o StrictHostKeyChecking=no '
@@ -78,7 +136,7 @@ SSH_COMMON_ARGS = (
 
 
 def generate_inventory(devices_data):
-    """Генерация инвентаря с группировкой по полю group"""
+    """Генерация инвентаря"""
     inventory = {
         'all': {
             'hosts': {},
@@ -94,28 +152,16 @@ def generate_inventory(devices_data):
         device_type = device.get('device_type', 'huawei')
         connection = 'ssh' if device_type == 'linux' else 'network_cli'
 
-        # Группа из БД, если нет — 'ungrouped'
-        group = device.get('group', 'ungrouped')
-
-        # Создаём группу, если её ещё нет
-        if group not in inventory:
-            inventory[group] = {'hosts': {}, 'vars': {}}
-
-        # Добавляем устройство в свою группу
-        inventory[group]['hosts'][device['host']] = {
-            'ansible_host': device['host'],
-            'ansible_port': device.get('port', 22),
-            'ansible_connection': connection,
-        }
-
-        # Добавляем устройство в all
         inventory['all']['hosts'][device['host']] = {
             'ansible_host': device['host'],
             'ansible_port': device.get('port', 22),
             'ansible_connection': connection,
         }
 
-    return inventory
+    fd, path = tempfile.mkstemp(suffix='.yml', prefix='inventory_')
+    with os.fdopen(fd, 'w') as f:
+        yaml.dump(inventory, f)
+    return path
 
 
 @app.task(bind=True, name='ansible.run_playbook')
