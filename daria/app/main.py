@@ -37,4 +37,4 @@ app.include_router(traps.router, prefix="/api/traps", tags=["traps"])
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "ucmdb"}
+    return {"status": "ok", "service": "daria"}

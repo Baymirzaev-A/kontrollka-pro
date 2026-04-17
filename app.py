@@ -289,9 +289,78 @@ else:
 def handle_connect():
     print(f"Client connected")
 
+
+# ===== WEBSOCKET ПОДПИСКИ ДЛЯ SNMP ОБНОВЛЕНИЙ =====
+from collections import defaultdict
+import redis
+
+device_subscribers = defaultdict(list)
+
+
+@socketio.on('connect')
+def handle_connect():
+    print(f"Client connected")
+
+
 @socketio.on('disconnect')
 def handle_disconnect():
     print(f"Client disconnected")
+    # Очищаем подписки при отключении
+    for device_id, subscribers in list(device_subscribers.items()):
+        if request.sid in subscribers:
+            subscribers.remove(request.sid)
+
+
+@socketio.on('subscribe_device')
+def handle_subscribe_device(data):
+    device_id = data.get('device_id')
+    if device_id and request.sid:
+        if device_id not in device_subscribers:
+            device_subscribers[device_id] = []
+        if request.sid not in device_subscribers[device_id]:
+            device_subscribers[device_id].append(request.sid)
+            logger.info(f"Client {request.sid} subscribed to device {device_id}")
+
+
+@socketio.on('unsubscribe_device')
+def handle_unsubscribe_device(data):
+    device_id = data.get('device_id')
+    if device_id and request.sid in device_subscribers.get(device_id, []):
+        device_subscribers[device_id].remove(request.sid)
+        logger.info(f"Client {request.sid} unsubscribed from device {device_id}")
+
+
+def start_redis_listener():
+    try:
+        r = redis.Redis(host='redis', port=6379, decode_responses=True)
+        pubsub = r.pubsub()
+        pubsub.subscribe('daria:device:updated')
+
+        batch = []
+        last_batch_time = time.time()
+
+        for message in pubsub.listen():
+            if message['type'] == 'message':
+                try:
+                    data = json.loads(message['data'])
+                    batch.append(data)
+
+                    now = time.time()
+                    if len(batch) >= 10 or (now - last_batch_time) > 1:
+                        for update in batch:
+                            device_id = update.get('device_id')
+                            for sid in device_subscribers.get(device_id, []):
+                                socketio.emit('snmp_updated', update, room=sid)
+                        batch = []
+                        last_batch_time = now
+                except Exception as e:
+                    logger.error(f"Error processing Redis message: {e}")
+    except Exception as e:
+        logger.error(f"Redis listener error: {e}")
+
+
+# Запускаем Redis listener в отдельном потоке
+threading.Thread(target=start_redis_listener, daemon=True).start()
 
 db = DeviceDB()
 
@@ -711,7 +780,9 @@ def add_device():
             device_type=data.get('device_type', 'huawei'),
             port=int(data.get('port', 22)),
             description=data.get('description', ''),
-            purpose=data.get('purpose', 'router')
+            purpose=data.get('purpose', 'router'),
+            group=data.get('group'),
+            site=data.get('site')
         )
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
         socketio.emit('devices_updated', {
@@ -805,11 +876,6 @@ def execute_command(device_id):
         username = session.get('username', 'unknown')
         db.save_command_history(device_id, command, output, username)
 
-        # Сохраняем конфиг если нужно
-        if 'display current-configuration' in command or command.strip() in ['display cur', 'disp cur',
-                                                                             'display current']:
-            db.save_config(device_id, output)
-
         return jsonify({
             'success': True,
             'output': output,
@@ -881,10 +947,6 @@ def execute_group_command():
 
             username = session.get('username', 'unknown')
             db.save_command_history(device_id, command, output, username)
-
-            if 'display current-configuration' in command or command.strip() in ['display cur', 'disp cur',
-                                                                                 'display current']:
-                db.save_config(device_id, output)
 
             results.append({
                 'device_id': device_id,
@@ -1452,9 +1514,11 @@ def update_device(device_id):
     port = int(request.form.get('port', 22))
     description = request.form.get('description', '')
     purpose = request.form.get('purpose', 'router')
+    group = request.form.get('group')
+    site = request.form.get('site')
 
     try:
-        db.update_device(device_id, name, host, device_type, port, description, purpose)
+        db.update_device(device_id, name, host, device_type, port, description, purpose,  group=group, site=site)
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
         logger.info(f"✏️ Устройство обновлено: {name} (ID: {device_id})")
         return redirect(url_for('index'))
@@ -1751,6 +1815,23 @@ def api_audit_commands():
     per_page = request.args.get('per_page', 50, type=int)
     history = db.get_command_history_all(page, per_page)
     return jsonify(history)
+
+
+@app.route('/api/device/<int:device_id>/rediscover', methods=['POST'])
+@login_required
+def api_rediscover_device(device_id):
+    """Принудительный сбор данных по устройству"""
+    import requests
+
+    try:
+        response = requests.post(
+            f'http://daria-api:8000/api/discovery/collect/{device_id}',
+            timeout=5
+        )
+        return jsonify({'success': True, 'message': 'Сбор данных запущен'})
+    except requests.exceptions.RequestException as e:
+        logger.error(f"DARIA API error: {e}")
+        return jsonify({'success': False, 'error': 'DARIA service unavailable'}), 503
 
 if __name__ == '__main__':
     cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')

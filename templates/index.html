@@ -229,6 +229,22 @@
                 </select>
             </div>
             <div class="form-group">
+                <label>SNMP версия</label>
+                <select id="deviceSnmpVersion" class="form-control">
+                    <option value="v2c">SNMP v2c</option>
+                    <option value="v3">SNMP v3</option>
+                    <option value="v1">SNMP v1</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Группа (Ansible)</label>
+                <input type="text" id="deviceGroup" class="form-control" placeholder="например: routers, switches">
+            </div>
+            <div class="form-group">
+                <label>Площадка</label>
+                <input type="text" id="deviceSite" class="form-control" placeholder="например: DC1, Office, M9">
+            </div>
+            <div class="form-group">
                 <label>Описание</label>
                 <input type="text" id="deviceDescription" class="form-control">
             </div>
@@ -281,9 +297,9 @@
                 Поддерживаются форматы: .csv, .xlsx, .xls. Первая строка - заголовки.
             </p>
             <div style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 5px; font-size: 0.9rem;">
-                <code>name,host,device_type,port,description,purpose</code><br>
-                <code>switch-01,10.0.0.2,huawei,22,Коммутатор,switch</code><br>
-                <code>router-01,10.0.0.1,huawei,22,Маршрутизатор,router</code>
+                <code>name,host,device_type,port,description,purpose,snmp_version,group,site</code><br>
+                <code>switch-01,10.0.0.2,huawei,22,Коммутатор,switch,v2c,center_switches,офис</code><br>
+                <code>router-01,10.0.0.1,huawei,22,Маршрутизатор,router,v3,zapad_routers,склад</code>
             </div>
         </div>
 
@@ -622,7 +638,10 @@
             device_type: document.getElementById('deviceType').value,
             port: parseInt(document.getElementById('devicePort').value),
             description: document.getElementById('deviceDescription').value,
-            purpose: document.getElementById('devicePurpose').value
+            purpose: document.getElementById('devicePurpose').value,
+            snmp_version: document.getElementById('deviceSnmpVersion').value,
+            group: document.getElementById('deviceGroup').value,
+            site: document.getElementById('deviceSite').value
         };
 
         showLoading();
@@ -699,11 +718,10 @@
     }
 
     function downloadSampleFile() {
-        const headers = ['name', 'host', 'device_type', 'port', 'description', 'purpose'];
+        const headers = ['name', 'host', 'device_type', 'port', 'description', 'purpose', 'snmp_version', 'group', 'site'];
         const data = [
-            ['switch-01', '10.0.0.2', 'huawei', '22', 'Коммутатор Huawei S5731', 'switch'],
-            ['router-01', '10.0.0.1', 'huawei', '22', 'Маршрутизатор Huawei AR', 'router'],
-            ['fw-01', '10.0.0.3', 'cisco_ios', '22', 'ASA Firewall', 'firewall']
+            ['switch-01', '10.0.0.2', 'huawei', '22', 'Коммутатор Huawei S5731', 'switch', 'v3', 'center_switches', 'офис'],
+            ['router-01', '10.0.0.1', 'huawei', '22', 'Маршрутизатор Huawei AR', 'router', 'v2c', 'zapad_routers', 'склад'],
         ];
 
         let csv = headers.join(',') + '\n';

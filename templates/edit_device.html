@@ -95,6 +95,31 @@
             </select>
         </div>
 
+        <div class="form-group">
+            <label>SNMP версия</label>
+            <select name="snmp_version" class="form-control">
+                <option value="v2c" {% if device.snmp_version == 'v2c' %}selected{% endif %}>SNMP v2c</option>
+                <option value="v3" {% if device.snmp_version == 'v3' %}selected{% endif %}>SNMP v3</option>
+                <option value="v1" {% if device.snmp_version == 'v1' %}selected{% endif %}>SNMP v1</option>
+            </select>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">Дополнительные настройки</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label>Группа (Ansible)</label>
+                        <input type="text" name="group" class="form-control" value="{{ device.group or '' }}" placeholder="например: routers, switches">
+                    </div>
+                    <div class="col-md-3">
+                        <label>Площадка</label>
+                        <input type="text" name="site" class="form-control" value="{{ device.site or '' }}" placeholder="например: DC1, Office, M9">
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div style="display: flex; gap: 0.5rem;">
             <button type="submit" class="btn btn-success">💾 Сохранить</button>
             <a href="/" class="btn btn-secondary">Отмена</a>

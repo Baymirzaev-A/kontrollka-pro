@@ -114,4 +114,4 @@ volumes:
 
 networks:
   kontrollka_network:
-    driver: bridge
+    external: true

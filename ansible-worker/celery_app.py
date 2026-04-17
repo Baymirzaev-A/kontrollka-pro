@@ -78,7 +78,7 @@ SSH_COMMON_ARGS = (
 
 
 def generate_inventory(devices_data):
-    """Генерация инвентаря"""
+    """Генерация инвентаря с группировкой по полю group"""
     inventory = {
         'all': {
             'hosts': {},
@@ -94,16 +94,28 @@ def generate_inventory(devices_data):
         device_type = device.get('device_type', 'huawei')
         connection = 'ssh' if device_type == 'linux' else 'network_cli'
 
+        # Группа из БД, если нет — 'ungrouped'
+        group = device.get('group', 'ungrouped')
+
+        # Создаём группу, если её ещё нет
+        if group not in inventory:
+            inventory[group] = {'hosts': {}, 'vars': {}}
+
+        # Добавляем устройство в свою группу
+        inventory[group]['hosts'][device['host']] = {
+            'ansible_host': device['host'],
+            'ansible_port': device.get('port', 22),
+            'ansible_connection': connection,
+        }
+
+        # Добавляем устройство в all
         inventory['all']['hosts'][device['host']] = {
             'ansible_host': device['host'],
             'ansible_port': device.get('port', 22),
             'ansible_connection': connection,
         }
 
-    fd, path = tempfile.mkstemp(suffix='.yml', prefix='inventory_')
-    with os.fdopen(fd, 'w') as f:
-        yaml.dump(inventory, f)
-    return path
+    return inventory
 
 
 @app.task(bind=True, name='ansible.run_playbook')

@@ -67,6 +67,33 @@ app.conf.update(
     task_acks_late=True,
 )
 
+# ===== ПЛАНИРОВЩИК UCMDB (РАЗ В НЕДЕЛЮ) =====
+from celery.schedules import crontab
+
+
+def parse_cron(cron_string: str):
+    """Преобразует строку cron в crontab объект"""
+    parts = cron_string.split()
+    if len(parts) != 5:
+        return crontab(day_of_week=0, hour=2, minute=0)  # дефолт: воскресенье 2:00
+
+    minute, hour, day_of_month, month, day_of_week = parts
+    return crontab(
+        minute=minute if minute != '*' else '*',
+        hour=hour if hour != '*' else '*',
+        day_of_month=day_of_month if day_of_month != '*' else '*',
+        month=month if month != '*' else '*',
+        day_of_week=day_of_week if day_of_week != '*' else '*'
+    )
+
+
+app.conf.beat_schedule = {
+    'daria-collect-weekly': {
+        'task': 'daria.tasks.collect_all_devices',
+        'schedule': parse_cron(os.environ.get('UCMDB_SCHEDULE', '0 2 * * 0')),
+    },
+}
+
 # SSH аргументы
 SSH_COMMON_ARGS = (
     '-o StrictHostKeyChecking=no '

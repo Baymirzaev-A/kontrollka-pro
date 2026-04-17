@@ -14,3 +14,4 @@ psycopg2-binary==2.9.10  # закомментировать на время ра
 gunicorn==25.3.0
 redis==5.0.1
 celery==5.6.0
+requests==2.32.3
