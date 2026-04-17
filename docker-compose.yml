@@ -96,7 +96,7 @@ services:
     deploy:
       mode: replicated
       replicas: ${CELERY_WORKERS:-3}
-    command: celery -A celery_app worker --concurrency=${CELERY_CONCURRENCY:-5} --loglevel=info
+    command: celery -A celery_app worker --beat --concurrency=${CELERY_CONCURRENCY:-5} --loglevel=info
     environment:
       - REDIS_URL=redis://redis:6379/0
       - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}

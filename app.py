@@ -1833,6 +1833,16 @@ def api_rediscover_device(device_id):
         logger.error(f"DARIA API error: {e}")
         return jsonify({'success': False, 'error': 'DARIA service unavailable'}), 503
 
+
+@app.route('/api/devices/rediscover-all', methods=['POST'])
+@login_required
+def api_rediscover_all_devices():
+    """Принудительный сбор по всем устройствам"""
+    from celery_app import collect_all_devices_task
+
+    task = collect_all_devices_task.delay()
+    return jsonify({'success': True, 'task_id': task.id, 'message': 'Сбор данных запущен в очередь'})
+
 if __name__ == '__main__':
     cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')
     key_file = os.environ.get('SSL_KEY', 'certs/key.pem')

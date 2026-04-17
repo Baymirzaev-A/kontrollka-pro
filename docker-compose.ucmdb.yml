@@ -42,7 +42,7 @@ services:
       timeout: 5s
       retries: 5
 
-  ucmdb-api:
+  daria-api:
     build: ./daria
     container_name: kontrollka_daria
     restart: always

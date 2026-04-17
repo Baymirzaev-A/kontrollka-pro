@@ -87,10 +87,41 @@ def parse_cron(cron_string: str):
     )
 
 
+# ===== ЗАДАЧИ ДЛЯ DARIA (МАССОВЫЙ SNMP СБОР) =====
+@app.task(bind=True, name='daria.tasks.collect_all_devices')
+def collect_all_devices_task(self):
+    """Массовый сбор SNMP данных по всем устройствам"""
+    import requests
+    try:
+        response = requests.post(
+            'http://daria-api:8000/api/discovery/collect-all',
+            timeout=5
+        )
+        logger.info(f"DARIA collect all started: {response.json()}")
+        return {'status': 'started', 'response': response.json()}
+    except Exception as e:
+        logger.error(f"DARIA collect all failed: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
+
+@app.task(bind=True, name='daria.tasks.collect_device')
+def collect_device_task(self, device_id: int):
+    """Сбор SNMP данных по одному устройству"""
+    import requests
+    try:
+        response = requests.post(
+            f'http://daria-api:8000/api/discovery/collect/{device_id}',
+            timeout=60
+        )
+        return {'status': 'started', 'response': response.json()}
+    except Exception as e:
+        logger.error(f"DARIA collect device {device_id} failed: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
 app.conf.beat_schedule = {
     'daria-collect-weekly': {
         'task': 'daria.tasks.collect_all_devices',
-        'schedule': parse_cron(os.environ.get('UCMDB_SCHEDULE', '0 2 * * 0')),
+        'schedule': parse_cron(os.environ.get('DARIA_SCHEDULE', '0 2 * * 0')),
     },
 }
 
