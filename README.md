@@ -276,6 +276,12 @@ mkdir certs
 # certs/key.pem - приватный ключ
 
 ```
+Обязательно создаем сеть для контейнеров
+```bash
+docker network create kontrollka_network
+````
+
+
 4. Запуск контейнеров
 ```bash
 docker-compose up -d

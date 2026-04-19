@@ -820,7 +820,7 @@
                 // SNMP данные (если недоступны — просто прочерки)
                 let snmpData = {};
                 try {
-                    const snmpResponse = await fetch(`http://daria-api:8000/api/devices/${encodeURIComponent(deviceData.host)}`);
+                    const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(deviceData.host)}`);
                     if (snmpResponse.ok) {
                         snmpData = await snmpResponse.json();
                     }
@@ -1116,7 +1116,7 @@
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
             try {
-                const snmpResponse = await fetch(`http://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
+                const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
                 const data = await snmpResponse.json();
                 const interfaces = data.interfaces || [];
 
@@ -1222,7 +1222,7 @@
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
             try {
-                const snmpResponse = await fetch(`http://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host || '')}`);
+                const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host || '')}`);
                 const data = await snmpResponse.json();
                 const neighbors = data.neighbors || [];
 
@@ -1289,7 +1289,7 @@
 
             try {
                 // Получаем последнюю конфигурацию из DARIA
-                const snmpResponse = await fetch(`http://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
+                const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
                 const data = await snmpResponse.json();
                 currentConfig = data.config || 'Конфигурация не найдена';
 
