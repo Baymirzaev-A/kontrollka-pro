@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 class Device(BaseModel):
-    ip: str = Field(..., regex=r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+    ip: str = Field(..., pattern=r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
     name: Optional[str] = None
     vendor: Optional[str] = None
     device_type: Optional[str] = None
@@ -24,7 +24,7 @@ class DeviceResponse(Device):
 
 
 class ScanRequest(BaseModel):
-    subnet: str = Field(..., regex=r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$')
+    subnet: str = Field(..., pattern=r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$')
     community: str = "public"
     snmp_version: str = "v2c"
 
