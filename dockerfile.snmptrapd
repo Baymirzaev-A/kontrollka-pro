@@ -1,0 +1,13 @@
+FROM alpine:latest
+
+# Устанавливаем net-snmp-tools, который содержит snmptrapd
+RUN apk add --no-cache net-snmp-tools
+
+# Копируем конфиг (убедись, что путь правильный)
+COPY ./daria/config/snmptrapd/snmptrapd.conf /etc/snmptrapd.conf
+
+# Открываем порт 162 для приема UDP трафика
+EXPOSE 162/udp
+
+# Запускаем snmptrapd
+CMD ["snmptrapd", "-Lf", "/dev/stdout", "-n", "-m", "ALL", "-O", "n", "-c", "/etc/snmptrapd.conf"]

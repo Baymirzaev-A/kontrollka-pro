@@ -73,7 +73,9 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   snmptrapd:
-    image: alpine/snmptrapd:latest
+    build:
+      context: .
+      dockerfile: dockerfile.snmptrapd
     container_name: kontrollka_snmptrapd
     restart: always
     network_mode: host
@@ -81,18 +83,17 @@ services:
       - ./daria/config/snmptrapd/snmptrapd.conf:/etc/snmptrapd.conf:ro
       - ./daria/scripts/trap_handler.py:/handler.py:ro
     command: >
-      sh -c "apk add --no-cache python3 py3-pip && pip3 install aiohttp && 
-             snmptrapd -Lf /dev/stdout -n -m ALL -O n -c /etc/snmptrapd.conf | python3 /handler.py"
+      sh -c "snmptrapd -Lf /dev/stdout -n -m ALL -O n -c /etc/snmptrapd.conf | python3 /handler.py"
     depends_on:
       - daria-api
     healthcheck:
-      test: ["CMD", "pgrep", "snmptrapd"]
+      test: [ "CMD", "pgrep", "snmptrapd" ]
       interval: 30s
       timeout: 10s
       retries: 3
 
   tftp:
-    image: alpine/tftp
+    image: pghalliday/tftp:latest
     container_name: kontrollka_tftp
     restart: always
     volumes:
