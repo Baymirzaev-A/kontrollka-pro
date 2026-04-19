@@ -4,7 +4,6 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libsnmp-dev \
-    snmp-mibs-downloader \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
