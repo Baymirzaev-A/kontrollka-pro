@@ -1,13 +1,10 @@
 FROM alpine:latest
 
-# Устанавливаем net-snmp-tools, который содержит snmptrapd
-RUN apk add --no-cache net-snmp-tools
+RUN apk add --no-cache net-snmp-tools python3 py3-pip
 
-# Копируем конфиг (убедись, что путь правильный)
 COPY ./daria/config/snmptrapd/snmptrapd.conf /etc/snmptrapd.conf
+COPY ./daria/scripts/trap_handler.py /handler.py
 
-# Открываем порт 162 для приема UDP трафика
-EXPOSE 162/udp
+RUN pip3 install aiohttp
 
-# Запускаем snmptrapd
-CMD ["snmptrapd", "-Lf", "/dev/stdout", "-n", "-m", "ALL", "-O", "n", "-c", "/etc/snmptrapd.conf"]
+CMD ["sh", "-c", "snmptrapd -Lf /dev/stdout -n -m ALL -O n -c /etc/snmptrapd.conf | python3 /handler.py"]
