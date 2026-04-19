@@ -82,7 +82,7 @@ def parse_cron(cron_string: str):
         minute=minute if minute != '*' else '*',
         hour=hour if hour != '*' else '*',
         day_of_month=day_of_month if day_of_month != '*' else '*',
-        month=month if month != '*' else '*',
+        month_of_year=month if month != '*' else '*',
         day_of_week=day_of_week if day_of_week != '*' else '*'
     )
 

@@ -15,11 +15,11 @@ services:
       - "7687:7687"
     networks:
       - kontrollka_network
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-changeme}", "RETURN 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    #healthcheck:
+      #test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-changeme}", "RETURN 1"]
+      #interval: 10s
+      #timeout: 5s
+      #retries: 5
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.3-alpine
