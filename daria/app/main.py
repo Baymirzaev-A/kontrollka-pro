@@ -33,7 +33,6 @@ app.add_middleware(
 
 app.include_router(discovery.router, prefix="/api/discovery", tags=["discovery"])
 app.include_router(devices.router, prefix="/api/devices", tags=["devices"])
-app.include_router(traps.router, prefix="/api/traps", tags=["traps"])
 
 @app.get("/health")
 async def health():
