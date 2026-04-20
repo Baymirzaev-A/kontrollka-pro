@@ -1,14 +1,5 @@
 CREATE DATABASE IF NOT EXISTS kontrollka_metrics;
 
-CREATE TABLE IF NOT EXISTS kontrollka_metrics.traps (
-    timestamp DateTime,
-    host String,
-    type String,
-    data String,
-    community String
-) ENGINE = MergeTree()
-ORDER BY timestamp;
-
 -- Таблица для снапшотов устройств
 CREATE TABLE IF NOT EXISTS kontrollka_metrics.device_snapshots (
     ip String,

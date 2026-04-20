@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import discovery, devices, traps
+from app.api import discovery, devices
 from app.core.db import close_neo4j, close_clickhouse
 
 logging.basicConfig(level=logging.INFO)
