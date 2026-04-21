@@ -1825,8 +1825,9 @@ def api_rediscover_device(device_id):
 
     try:
         response = requests.post(
-            f'http://daria-api:8000/api/discovery/collect/{device_id}',
-            timeout=5
+            f'https://daria-api:8000/api/discovery/collect/{device_id}',
+            timeout=5,
+            verify = False
         )
         return jsonify({'success': True, 'message': 'Сбор данных запущен'})
     except requests.exceptions.RequestException as e:
