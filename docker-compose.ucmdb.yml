@@ -54,6 +54,10 @@ services:
       - CLICKHOUSE_PORT=8123
       - CLICKHOUSE_USER=kontrollka
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-changeme}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=kontrollka
+      - POSTGRES_USER=kontrollka
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
     ports:
       - "8000:8000"
     volumes:
