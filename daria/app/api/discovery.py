@@ -24,13 +24,11 @@ async def get_scan_status(task_id: str):
 
 @router.post("/collect/{device_id}")
 async def collect_device_manual(device_id: str, background_tasks: BackgroundTasks):
-    """Ручной сбор данных по одному устройству"""
     background_tasks.add_task(engine.collect_single_device, device_id)
-    return {"status": "started", "device_id": device_id, "message": "Сбор данных запущен"}
+    return {"status": "started", "device_id": device_id}
 
 
 @router.post("/collect-all")
 async def collect_all_devices_manual():
-    """Массовый сбор данных по всем устройствам (вызывается из Celery)"""
     await engine.collect_all_devices()
-    return {"status": "completed", "message": "Сбор данных по всем устройствам завершён"}
+    return {"status": "completed"}

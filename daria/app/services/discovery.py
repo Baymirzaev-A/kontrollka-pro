@@ -11,8 +11,10 @@ from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd, set_cmd, next_cmd,
     CommunityData, UsmUserData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
-    usmAesCfb128Protocol, usmDESPrivProtocol
+    usmAesCfb128Protocol, usmDESPrivProtocol,
+    ObjectType, ObjectIdentity  # не забудьте это добавить
 )
+from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +141,6 @@ CONFIG_MIBS = {
 
 class DiscoveryEngine:
     def __init__(self):
-        self.snmp_engine = SnmpEngine()
         self.semaphore = asyncio.Semaphore(50)
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
@@ -225,29 +226,29 @@ class DiscoveryEngine:
         await self._save_to_neo4j(data)
         await self._save_to_clickhouse(data)
 
-    async def _get_firmware(self, ip: str, auth: str) -> str:
+    async def _get_firmware(self, ip: str, auth) -> str:
         """Версия прошивки через SNMP (sysDescr)"""
         result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.1.0")
         return result or "Unknown"
 
-    async def _get_serial(self, ip: str, auth: str) -> str:
+    async def _get_serial(self, ip: str, auth) -> str:
         """Серийный номер через SNMP (entPhysicalSerialNum)"""
         result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.47.1.1.1.1.11.1")
         return result or "Unknown"
 
-    async def _get_vendor(self, ip: str, auth: str) -> str:
+    async def _get_vendor(self, ip: str, auth) -> str:
         """Вендор через sysObjectID"""
         sys_object_id = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.2.0")
         if sys_object_id:
             return self._vendor_from_oid(sys_object_id)
         return "Unknown"
 
-    async def _get_location(self, ip: str, auth: str) -> str:
+    async def _get_location(self, ip: str, auth) -> str:
         """Локация устройства"""
         result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.6.0")
         return result or ""
 
-    async def _get_contact(self, ip: str, auth: str) -> str:
+    async def _get_contact(self, ip: str, auth) -> str:
         """Контактное лицо"""
         result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.4.0")
         return result or ""
@@ -275,7 +276,7 @@ class DiscoveryEngine:
 
         return interfaces
 
-    async def _get_neighbors(self, ip: str, auth: str) -> List[Dict]:
+    async def _get_neighbors(self, ip: str, auth) -> List[Dict]:
         """LLDP/CDP соседи"""
         neighbors = []
 
@@ -291,7 +292,7 @@ class DiscoveryEngine:
 
         return neighbors
 
-    async def _get_cdp_neighbors(self, ip: str, auth: str) -> List[Dict]:
+    async def _get_cdp_neighbors(self, ip: str, auth) -> List[Dict]:
         """CDP соседи"""
         neighbors = []
         base_oid = "1.3.6.1.4.1.9.9.23.1.2.1.1"
@@ -314,7 +315,7 @@ class DiscoveryEngine:
 
         return neighbors
 
-    async def _get_lldp_neighbors(self, ip: str, auth: str) -> List[Dict]:
+    async def _get_lldp_neighbors(self, ip: str, auth) -> List[Dict]:
         """LLDP соседи"""
         neighbors = []
         base_oid = "1.0.8802.1.1.2.1.4.1.1"
@@ -476,67 +477,51 @@ class DiscoveryEngine:
         return ""
 
     async def _snmp_set(self, ip: str, auth, oid: str, value) -> Optional[bool]:
-        """SNMP SET запрос (для запуска копирования конфига)"""
         async with self.semaphore:
             try:
-                errorIndication, errorStatus, errorIndex, varBinds = await setCmd(
-                    self.snmp_engine,
+                error_indication, error_status, error_index, var_binds = await set_cmd(
                     auth,
                     UdpTransportTarget((ip, 161), retries=2, timeout=5),
-                    ContextData(),
                     ObjectType(ObjectIdentity(oid), value)
                 )
-                return errorIndication is None and errorStatus == 0
+                return error_indication is None and error_status == 0
             except Exception as e:
                 logger.error(f"SNMP SET failed for {ip}: {e}")
                 return False
 
-    async def _snmp_walk(self, ip: str, auth: str, base_oid: str) -> Optional[List[str]]:
-        """SNMP WALK"""
+    async def _snmp_walk(self, ip: str, auth, base_oid: str) -> Optional[List[str]]:
         results = []
-
         try:
-            iterator = nextCmd(
-                self.snmp_engine,
+            iterator = next_cmd(
                 auth,
                 UdpTransportTarget((ip, 161), retries=2, timeout=3),
-                ContextData(),
-                ObjectType(ObjectIdentity(base_oid)),
-                lexicographicMode=False,
-                ignoreNonIncreasingOid=True
+                ObjectType(ObjectIdentity(base_oid))
             )
-
-            for errorIndication, errorStatus, errorIndex, varBinds in iterator:
-                if errorIndication or errorStatus:
+            async for error_indication, error_status, error_index, var_binds in iterator:
+                if error_indication or error_status:
                     break
-                for varBind in varBinds:
-                    results.append(str(varBind[1]))
+                for var_bind in var_binds:
+                    results.append(str(var_bind[1]))
         except Exception as e:
             logger.debug(f"SNMP walk failed for {ip}: {e}")
             return None
-
         return results if results else None
 
-    async def _snmp_get(self, ip: str, auth: str, oid: str) -> Optional[str]:
-        """SNMP GET запрос"""
+    async def _snmp_get(self, ip: str, auth, oid: str) -> Optional[str]:
         async with self.semaphore:
             try:
-                errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
-                    self.snmp_engine,
+                error_indication, error_status, error_index, var_binds = await get_cmd(
                     auth,
                     UdpTransportTarget((ip, 161), retries=1, timeout=2),
-                    ContextData(),
                     ObjectType(ObjectIdentity(oid))
                 )
-
-                if errorIndication or errorStatus:
+                if error_indication or error_status:
                     return None
-
-                for varBind in varBinds:
-                    return str(varBind[1])
+                for var_bind in var_binds:
+                    return str(var_bind[1])
             except Exception:
                 return None
-        return None
+            return None
 
     def _vendor_from_oid(self, sys_object_id: str) -> str:
         """Определение вендора по sysObjectID"""
