@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from pysnmp.smi import builder, view
 from app.core.db import get_neo4j_driver, get_clickhouse_client
+from pysnmp.hlapi.asyncio.cmd import getCmd, setCmd, nextCmd
 from pysnmp.hlapi.asyncio import (
-    getCmd, setCmd, nextCmd,
     UsmUserData, CommunityData, usmHMACSHAAuthProtocol,
     usmHMACMD5AuthProtocol, usmAesCfb128Protocol, usmDESPrivProtocol
 )
