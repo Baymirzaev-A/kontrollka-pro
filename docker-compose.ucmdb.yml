@@ -58,6 +58,8 @@ services:
       - POSTGRES_DB=kontrollka
       - POSTGRES_USER=kontrollka
       - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - TFTP_SERVER=${TFTP_SERVER}
+      - TFTP_DIR=${TFTP_DIR}
     ports:
       - "8000:8000"
     volumes:
