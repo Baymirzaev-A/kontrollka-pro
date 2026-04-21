@@ -12,7 +12,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData, UsmUserData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol, usmDESPrivProtocol,
-    ObjectType, ObjectIdentity  # не забудьте это добавить
+    ObjectType, ObjectIdentity, SnmpEngine
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 
@@ -141,6 +141,7 @@ CONFIG_MIBS = {
 
 class DiscoveryEngine:
     def __init__(self):
+        self.snmp_engine = SnmpEngine()
         self.semaphore = asyncio.Semaphore(50)
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
@@ -480,6 +481,7 @@ class DiscoveryEngine:
         async with self.semaphore:
             try:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
+                    self.snmp_engine,
                     auth,
                     UdpTransportTarget((ip, 161), retries=2, timeout=5),
                     ObjectType(ObjectIdentity(oid), value)
@@ -493,6 +495,7 @@ class DiscoveryEngine:
         results = []
         try:
             iterator = next_cmd(
+                self.snmp_engine,
                 auth,
                 UdpTransportTarget((ip, 161), retries=2, timeout=3),
                 ObjectType(ObjectIdentity(base_oid))
@@ -511,6 +514,7 @@ class DiscoveryEngine:
         async with self.semaphore:
             try:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
+                    self.snmp_engine,
                     auth,
                     UdpTransportTarget((ip, 161), retries=1, timeout=2),
                     ObjectType(ObjectIdentity(oid))
