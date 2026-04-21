@@ -167,7 +167,7 @@ class DiscoveryEngine:
             password=os.getenv("POSTGRES_PASSWORD", "")
         )
 
-        devices = await conn.fetch("SELECT id, name, host, device_type, community, snmp_version, group FROM devices")
+        devices = await conn.fetch('SELECT id, name, host, device_type, community, snmp_version, "group" FROM devices')
         await conn.close()
 
         logger.info(f"Starting collection for {len(devices)} devices")
@@ -188,7 +188,7 @@ class DiscoveryEngine:
         )
 
         device = await conn.fetchrow(
-            "SELECT id, name, host, device_type, community, snmp_version, group FROM devices WHERE id = $1",
+            'SELECT id, name, host, device_type, community, snmp_version, "group" FROM devices WHERE id = $1',
             int(device_id)
         )
         await conn.close()

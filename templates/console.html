@@ -909,6 +909,17 @@
                                             </select>
                                         </td>
                                     </tr>
+                                    <tr>
+                                        <th>SNMP версия</th>
+                                        <td class="editable-select" data-field="snmp_version" data-value="${escapeHtml(deviceData.snmp_version)}">
+                                            <span class="display-value">${escapeHtml(deviceData.snmp_version || 'v2c')}</span>
+                                            <select class="edit-select" style="display: none;">
+                                                <option value="v1">SNMP v1</option>
+                                                <option value="v2c">SNMP v2c</option>
+                                                <option value="v3">SNMP v3</option>
+                                            </select>
+                                        </td>
+                                    </tr>
                                     <tr><th>Группа (Ansible)</th><td class="editable" data-field="group">${escapeHtml(deviceData.group) || '—'}</td></tr>
                                     <tr><th>Площадка</th><td class="editable" data-field="site">${escapeHtml(deviceData.site) || '—'}</td></tr>
                                     <tr><th>Описание</th><td class="editable" data-field="description">${escapeHtml(deviceData.description) || '—'}</td></tr>
@@ -1037,6 +1048,7 @@
             formData.append('device_type', currentDeviceData.device_type || 'huawei');
             formData.append('port', currentDeviceData.port || 22);
             formData.append('purpose', currentDeviceData.purpose || 'router');
+            formData.append('snmp_version', currentDeviceData.snmp_version || 'v2c');
             formData.append('group', currentDeviceData.group || '');
             formData.append('site', currentDeviceData.site || '');
             formData.append('description', currentDeviceData.description || '');

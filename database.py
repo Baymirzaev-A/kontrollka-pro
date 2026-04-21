@@ -477,6 +477,7 @@ class DeviceDB:
             'port': device.port,
             'description': device.description,
             'purpose': device.purpose,
+            'snmp_version': device.snmp_version,
             'created_at': device.created_at.isoformat() if device.created_at else None,
             'group': device.group,
             'site': device.site

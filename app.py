@@ -1514,11 +1514,12 @@ def update_device(device_id):
     port = int(request.form.get('port', 22))
     description = request.form.get('description', '')
     purpose = request.form.get('purpose', 'router')
+    snmp_version = request.form.get('snmp_version', 'v2c')
     group = request.form.get('group')
     site = request.form.get('site')
 
     try:
-        db.update_device(device_id, name, host, device_type, port, description, purpose,  group=group, site=site)
+        db.update_device(device_id, name, host, device_type, port, description, purpose, snmp_version=snmp_version, group=group, site=site)
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
         logger.info(f"✏️ Устройство обновлено: {name} (ID: {device_id})")
         return redirect(url_for('index'))
