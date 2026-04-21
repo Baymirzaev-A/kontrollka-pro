@@ -3,21 +3,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import discovery, devices
-from app.core.db import close_neo4j, close_clickhouse
+from app.core.db import init_neo4j, init_clickhouse, close_neo4j, close_clickhouse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting UCMDB service")
+    logger.info("Starting DARIA service")
+    await init_neo4j()
+    init_clickhouse()
     yield
-    logger.info("Shutting down UCMDB service")
+    logger.info("Shutting down DARIA service")
     await close_neo4j()
     await close_clickhouse()
 
 app = FastAPI(
-    title="Kontrollka UCMDB",
+    title="Kontrollka DARIA",
     description="Multi-vendor network discovery and CMDB",
     version="1.0.0",
     lifespan=lifespan
