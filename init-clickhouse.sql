@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS kontrollka_metrics.device_snapshots (
     serial String,
     location String,
     contact String,
+    config String,
     interfaces_count UInt32,
     last_collected DateTime
 ) ENGINE = MergeTree()

@@ -9,7 +9,7 @@ from pysnmp.smi import builder, view
 from app.core.db import get_neo4j_driver, get_clickhouse_client
 from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd, set_cmd, next_cmd,
-    CommunityData, UsmUserData,
+    CommunityData, UsmUserData, ContextData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol, usmDESPrivProtocol,
     ObjectType, ObjectIdentity, SnmpEngine
@@ -150,12 +150,12 @@ class DiscoveryEngine:
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
                 os.getenv("SNMP_V3_USER", "daria"),
+                authKey=os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                privKey=os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
                 authProtocol=usmHMACSHAAuthProtocol if os.getenv(
                     "SNMP_V3_AUTH_PROTOCOL") == "SHA" else usmHMACMD5AuthProtocol,
-                authKey=os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
                 privProtocol=usmAesCfb128Protocol if os.getenv(
                     "SNMP_V3_PRIV_PROTOCOL") == "AES" else usmDESPrivProtocol,
-                privKey=os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
             )
         else:  # v1 или v2c
             mpModel = 1 if snmp_version == "v2c" else 0
@@ -437,10 +437,48 @@ class DiscoveryEngine:
         from netmiko import ConnectHandler
 
         commands = {
-            'juniper': 'show configuration | display set',
-            'arista': 'show running-config',
-            'huawei': 'display current-configuration',
+            # Cisco
             'cisco': 'show running-config',
+            'cisco_ios': 'show running-config',
+            'cisco_nxos': 'show running-config',
+            'cisco_xr': 'show running-config',
+            'cisco_asa': 'show running-config',
+            # Huawei
+            'huawei': 'display current-configuration',
+            'huawei_vrpv8': 'display current-configuration',
+            'huawei_olt': 'display current-configuration',
+            # Juniper
+            'juniper': 'show configuration | display set',
+            # Arista
+            'arista': 'show running-config',
+            'arista_eos': 'show running-config',
+            # HP/Aruba
+            'hp_procurve': 'show running-config',
+            'hp_comware': 'display current-configuration',
+            'aruba_os': 'show running-config',
+            # Dell
+            'dell_force10': 'show running-config',
+            'dell_os10': 'show running-config',
+            'dell_powerconnect': 'show running-config',
+            # Extreme
+            'extreme_exos': 'show configuration',
+            'extreme_ers': 'show config',
+            'extreme_nos': 'show running-config',
+            # Nokia/Alcatel
+            'alcatel_sros': 'show configuration',
+            # Brocade
+            'brocade_fastiron': 'show running-config',
+            'brocade_netiron': 'show running-config',
+            # Fortinet
+            'fortinet': 'show full-configuration',
+            # MikroTik
+            'mikrotik_routeros': 'export',
+            # Eltex
+            'eltex': 'show running-config',
+            'eltex_esr': 'show running-config',
+            # ZTE
+            'zte': 'show running-config',
+            # Linux
             'linux': 'cat /etc/passwd',  # не храним конфиги серверов
         }
 
@@ -454,7 +492,7 @@ class DiscoveryEngine:
                 password=os.getenv("DEVICE_PASSWORD"),
                 timeout=30,
             )
-            config = connection.send_command(cmd)
+            config = connection.send_command(cmd, expect_string=r'[>#]')
             connection.disconnect()
             return config
         except Exception as e:
