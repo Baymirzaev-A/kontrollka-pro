@@ -484,8 +484,11 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     self.snmp_engine,
                     auth,
-                    UdpTransportTarget((ip, 161), retries=2, timeout=5),
-                    ObjectType(ObjectIdentity(oid), value)
+                    UdpTransportTarget((ip, 161)),
+                    ContextData(),
+                    ObjectType(ObjectIdentity(oid), value),
+                    timeout=5,
+                    retries=2
                 )
                 return error_indication is None and error_status == 0
             except Exception as e:
@@ -517,8 +520,11 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
                     self.snmp_engine,
                     auth,
-                    UdpTransportTarget((ip, 161), retries=1, timeout=2),
-                    ObjectType(ObjectIdentity(oid))
+                    UdpTransportTarget((ip, 161)),
+                    ContextData(),
+                    ObjectType(ObjectIdentity(oid)),
+                    timeout = 2,
+                    retries = 1
                 )
                 if error_indication or error_status:
                     return None

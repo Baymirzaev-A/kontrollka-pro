@@ -34,6 +34,7 @@ services:
       - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "8123:8123"
+      - "9000:9000"
     networks:
       - kontrollka_network
     healthcheck:
