@@ -9,10 +9,10 @@ from pysnmp.smi import builder, view
 from app.core.db import get_neo4j_driver, get_clickhouse_client
 from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd, set_cmd, next_cmd,
-    CommunityData, UsmUserData, ContextData,
+    CommunityData, UsmUserData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol, usmDESPrivProtocol,
-    ObjectType, ObjectIdentity, SnmpEngine
+    ObjectType, ObjectIdentity
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 
@@ -141,21 +141,19 @@ CONFIG_MIBS = {
 
 class DiscoveryEngine:
     def __init__(self):
-        self.snmp_engine = SnmpEngine()
         self.semaphore = asyncio.Semaphore(50)
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
             # берём v3 настройки из .env
             return UsmUserData(
-                os.getenv("SNMP_V3_USER", "daria"),
-                os.getenv("SNMP_V3_USER", "daria"),
-                authKey=os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                privKey=os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
-                authProtocol=usmHMACSHAAuthProtocol if os.getenv(
-                    "SNMP_V3_AUTH_PROTOCOL") == "SHA" else usmHMACMD5AuthProtocol,
-                privProtocol=usmAesCfb128Protocol if os.getenv(
-                    "SNMP_V3_PRIV_PROTOCOL") == "AES" else usmDESPrivProtocol,
+                os.getenv("SNMP_V3_USER", "daria"),  # securityName
+                usmHMACSHAAuthProtocol if os.getenv("SNMP_V3_AUTH_PROTOCOL") == "SHA" else usmHMACMD5AuthProtocol,
+                # authProtocol
+                os.getenv("SNMP_V3_AUTH_PASSWORD", ""),  # authKey
+                usmAesCfb128Protocol if os.getenv("SNMP_V3_PRIV_PROTOCOL") == "AES" else usmDESPrivProtocol,
+                # privProtocol
+                os.getenv("SNMP_V3_PRIV_PASSWORD", ""),  # privKey
             )
         else:  # v1 или v2c
             mpModel = 1 if snmp_version == "v2c" else 0
@@ -520,13 +518,9 @@ class DiscoveryEngine:
         async with self.semaphore:
             try:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
-                    self.snmp_engine,
                     auth,
-                    await UdpTransportTarget.create((ip, 161)),
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid), value),
-                    timeout=5,
-                    retries=2
+                    UdpTransportTarget((ip, 161)),
+                    ObjectType(ObjectIdentity(oid), value)
                 )
                 return error_indication is None and error_status == 0
             except Exception as e:
@@ -537,13 +531,9 @@ class DiscoveryEngine:
         results = []
         try:
             iterator = next_cmd(
-                self.snmp_engine,
                 auth,
-                await UdpTransportTarget.create((ip, 161)),
-                ContextData(),
-                ObjectType(ObjectIdentity(base_oid)),
-                timeout=3,
-                retries=2
+                UdpTransportTarget((ip, 161)),
+                ObjectType(ObjectIdentity(base_oid))
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
                 if error_indication or error_status:
@@ -559,13 +549,9 @@ class DiscoveryEngine:
         async with self.semaphore:
             try:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
-                    self.snmp_engine,
                     auth,
-                    await UdpTransportTarget.create((ip, 161)),
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid)),
-                    timeout = 2,
-                    retries = 1
+                    UdpTransportTarget((ip, 161)),
+                    ObjectType(ObjectIdentity(oid))
                 )
                 if error_indication or error_status:
                     return None
