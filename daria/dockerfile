@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
+    openssh-client \
     libsnmp-dev \
     && rm -rf /var/lib/apt/lists/*
 

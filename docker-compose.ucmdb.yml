@@ -59,6 +59,8 @@ services:
       - POSTGRES_DB=kontrollka
       - POSTGRES_USER=kontrollka
       - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
+      - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
       - TFTP_SERVER=${TFTP_SERVER}
       - TFTP_DIR=${TFTP_DIR}
     ports:
