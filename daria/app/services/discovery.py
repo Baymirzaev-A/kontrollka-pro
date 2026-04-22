@@ -484,7 +484,7 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     self.snmp_engine,
                     auth,
-                    UdpTransportTarget((ip, 161)),
+                    UdpTransportTarget.create((ip, 161)),
                     ContextData(),
                     ObjectType(ObjectIdentity(oid), value),
                     timeout=5,
@@ -501,8 +501,11 @@ class DiscoveryEngine:
             iterator = next_cmd(
                 self.snmp_engine,
                 auth,
-                UdpTransportTarget((ip, 161), retries=2, timeout=3),
-                ObjectType(ObjectIdentity(base_oid))
+                UdpTransportTarget.create((ip, 161)),
+                ContextData(),
+                ObjectType(ObjectIdentity(base_oid)),
+                timeout=3,
+                retries=2
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
                 if error_indication or error_status:
@@ -520,7 +523,7 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
                     self.snmp_engine,
                     auth,
-                    UdpTransportTarget((ip, 161)),
+                    UdpTransportTarget.create((ip, 161)),
                     ContextData(),
                     ObjectType(ObjectIdentity(oid)),
                     timeout = 2,
