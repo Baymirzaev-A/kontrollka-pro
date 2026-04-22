@@ -148,7 +148,8 @@ class DiscoveryEngine:
         if snmp_version == "v3":
             # берём v3 настройки из .env
             return UsmUserData(
-                securityName=os.getenv("SNMP_V3_USER", "svc_snmp"),
+                os.getenv("SNMP_V3_USER", "daria"),
+                os.getenv("SNMP_V3_USER", "daria"),
                 authProtocol=usmHMACSHAAuthProtocol if os.getenv(
                     "SNMP_V3_AUTH_PROTOCOL") == "SHA" else usmHMACMD5AuthProtocol,
                 authKey=os.getenv("SNMP_V3_AUTH_PASSWORD", ""),

@@ -51,7 +51,7 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme}
       - CLICKHOUSE_HOST=clickhouse
-      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_PORT=9000
       - CLICKHOUSE_USER=kontrollka
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-changeme}
       - POSTGRES_HOST=postgres
