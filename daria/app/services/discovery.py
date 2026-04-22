@@ -522,7 +522,7 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     self.snmp_engine,
                     auth,
-                    UdpTransportTarget.create((ip, 161)),
+                    await UdpTransportTarget.create((ip, 161)),
                     ContextData(),
                     ObjectType(ObjectIdentity(oid), value),
                     timeout=5,
@@ -539,7 +539,7 @@ class DiscoveryEngine:
             iterator = next_cmd(
                 self.snmp_engine,
                 auth,
-                UdpTransportTarget.create((ip, 161)),
+                await UdpTransportTarget.create((ip, 161)),
                 ContextData(),
                 ObjectType(ObjectIdentity(base_oid)),
                 timeout=3,
@@ -561,7 +561,7 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
                     self.snmp_engine,
                     auth,
-                    UdpTransportTarget.create((ip, 161)),
+                    await UdpTransportTarget.create((ip, 161)),
                     ContextData(),
                     ObjectType(ObjectIdentity(oid)),
                     timeout = 2,
