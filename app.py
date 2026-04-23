@@ -1845,6 +1845,12 @@ def api_rediscover_all_devices():
     task = collect_all_devices_task.delay()
     return jsonify({'success': True, 'task_id': task.id, 'message': 'Сбор данных запущен в очередь'})
 
+@app.context_processor
+def inject_daria_url():
+    return {
+        'daria_api_url': os.getenv('DARIA_API_URL', 'http://daria-api:8000')
+    }
+
 if __name__ == '__main__':
     cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')
     key_file = os.environ.get('SSL_KEY', 'certs/key.pem')

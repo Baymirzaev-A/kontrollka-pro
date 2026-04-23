@@ -517,9 +517,10 @@ class DiscoveryEngine:
     async def _snmp_set(self, ip: str, auth, oid: str, value) -> Optional[bool]:
         async with self.semaphore:
             try:
+                transport = await UdpTransportTarget.create((ip, 161))
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     auth,
-                    UdpTransportTarget((ip, 161)),
+                    transport,
                     ObjectType(ObjectIdentity(oid), value)
                 )
                 return error_indication is None and error_status == 0
@@ -530,9 +531,10 @@ class DiscoveryEngine:
     async def _snmp_walk(self, ip: str, auth, base_oid: str) -> Optional[List[str]]:
         results = []
         try:
+            transport = await UdpTransportTarget.create((ip, 161))
             iterator = next_cmd(
                 auth,
-                UdpTransportTarget((ip, 161)),
+                transport,
                 ObjectType(ObjectIdentity(base_oid))
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
@@ -548,9 +550,10 @@ class DiscoveryEngine:
     async def _snmp_get(self, ip: str, auth, oid: str) -> Optional[str]:
         async with self.semaphore:
             try:
+                transport = await UdpTransportTarget.create((ip, 161))
                 error_indication, error_status, error_index, var_binds = await get_cmd(
                     auth,
-                    UdpTransportTarget((ip, 161)),
+                    transport,
                     ObjectType(ObjectIdentity(oid))
                 )
                 if error_indication or error_status:

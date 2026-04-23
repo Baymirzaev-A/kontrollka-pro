@@ -408,6 +408,7 @@
         const deviceName = "{{ device.name }}";
         const userRole = "{{ user_role }}";
         const devicePurpose = "{{ device.purpose }}";
+        const DARIA_API_URL = '{{ daria_api_url }}';
 
         // ===== WEBSOCKET ПОДПИСКА НА SNMP ОБНОВЛЕНИЯ =====
         let currentSubscribedDevice = null;
@@ -820,7 +821,7 @@
                 // SNMP данные (если недоступны — просто прочерки)
                 let snmpData = {};
                 try {
-                    const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(deviceData.host)}`);
+                    const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(deviceData.host)}`);
                     if (snmpResponse.ok) {
                         snmpData = await snmpResponse.json();
                     }
@@ -1128,7 +1129,7 @@
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
             try {
-                const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
+                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
                 const data = await snmpResponse.json();
                 const interfaces = data.interfaces || [];
 
@@ -1234,7 +1235,7 @@
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
             try {
-                const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host || '')}`);
+                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
                 const data = await snmpResponse.json();
                 const neighbors = data.neighbors || [];
 
@@ -1301,7 +1302,7 @@
 
             try {
                 // Получаем последнюю конфигурацию из DARIA
-                const snmpResponse = await fetch(`https://daria-api:8000/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
+                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`);
                 const data = await snmpResponse.json();
                 currentConfig = data.config || 'Конфигурация не найдена';
 
