@@ -44,7 +44,7 @@ services:
     #Добавляем порты, если нужно несколько воркеров, например "5001:5001"
     environment:
       # Основные
-      - DARIA_API_URL=http://daria-api:8000
+      - DARIA_API_URL=https://daria-api:8000
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=postgresql://kontrollka:${DB_PASSWORD}@postgres:5432/kontrollka
       - REDIS_URL=redis://redis:6379
