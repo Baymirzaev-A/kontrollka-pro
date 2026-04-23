@@ -12,7 +12,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData, UsmUserData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol, usmDESPrivProtocol,
-    ObjectType, ObjectIdentity
+    ObjectType, ObjectIdentity, ContextData
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 
@@ -222,6 +222,8 @@ class DiscoveryEngine:
             "config": await self._get_config(ip, auth, device.get("device_type", "")),
             "last_collected": datetime.now()
         }
+
+        logger.info(f"Final config for {ip}: length={len(data['config'])}")
 
         await self._save_to_neo4j(data)
         await self._save_to_clickhouse(data)
@@ -490,7 +492,10 @@ class DiscoveryEngine:
                 password=os.getenv("DEVICE_PASSWORD"),
                 timeout=30,
             )
-            config = connection.send_command(cmd, expect_string=r'[>#]')
+            connection.disable_paging()
+
+            config = connection.send_command(cmd, read_timeout=60)
+            logger.info(f"SSH config length: {len(config)} characters")
             connection.disconnect()
             return config
         except Exception as e:
@@ -521,6 +526,7 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     auth,
                     transport,
+                    ContextData(),
                     ObjectType(ObjectIdentity(oid), value)
                 )
                 return error_indication is None and error_status == 0
@@ -535,6 +541,7 @@ class DiscoveryEngine:
             iterator = next_cmd(
                 auth,
                 transport,
+                ContextData(),
                 ObjectType(ObjectIdentity(base_oid))
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
@@ -554,6 +561,7 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
                     auth,
                     transport,
+                    ContextData(),
                     ObjectType(ObjectIdentity(oid))
                 )
                 if error_indication or error_status:
