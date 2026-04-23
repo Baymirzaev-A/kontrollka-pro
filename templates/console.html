@@ -1131,6 +1131,10 @@
             const container = document.getElementById('ports-content');
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
+            if (!currentDeviceData.host) {
+                await loadDeviceInfo();
+            }
+
             try {
                 const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
                     mode: 'cors',
@@ -1240,6 +1244,10 @@
             const container = document.getElementById('neighbors-content');
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
+            if (!currentDeviceData.host) {
+                await loadDeviceInfo();
+            }
+
             try {
                 const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
                     mode: 'cors',
@@ -1309,6 +1317,10 @@
             const container = document.getElementById('configs-viewer');
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
+            if (!currentDeviceData.host) {
+                await loadDeviceInfo();  // сначала загружаем данные устройства
+            }
+
             try {
                 // Получаем последнюю конфигурацию из DARIA
                 const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
@@ -1326,6 +1338,7 @@
                 renderConfigViewer();
 
             } catch (error) {
+                console.error('Error loading configs:', error);
                 container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных от SNMP</div>';
             }
         }

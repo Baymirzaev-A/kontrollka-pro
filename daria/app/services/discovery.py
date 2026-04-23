@@ -526,8 +526,8 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     auth,
                     transport,
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid), value)
+                    ObjectType(ObjectIdentity(oid), value),
+                    ContextData()
                 )
                 return error_indication is None and error_status == 0
             except Exception as e:
@@ -541,8 +541,8 @@ class DiscoveryEngine:
             iterator = next_cmd(
                 auth,
                 transport,
-                ContextData(),
-                ObjectType(ObjectIdentity(base_oid))
+                ObjectType(ObjectIdentity(base_oid)),
+                ContextData()
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
                 if error_indication or error_status:
@@ -561,8 +561,8 @@ class DiscoveryEngine:
                 error_indication, error_status, error_index, var_binds = await get_cmd(
                     auth,
                     transport,
+                    ObjectType(ObjectIdentity(oid)),
                     ContextData(),
-                    ObjectType(ObjectIdentity(oid))
                 )
                 if error_indication or error_status:
                     return None
