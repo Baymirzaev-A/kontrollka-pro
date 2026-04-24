@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS kontrollka_metrics.device_snapshots (
 ) ENGINE = MergeTree()
 ORDER BY last_collected;
 
--- Таблица для истории интерфейсов
+-- Таблица для истории интерфейсов (с добавленными колонками для ошибок)
 CREATE TABLE IF NOT EXISTS kontrollka_metrics.interface_history (
     device_ip String,
     interface_name String,
@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS kontrollka_metrics.interface_history (
     speed UInt64,
     admin_status String,
     oper_status String,
+    in_errors UInt32 DEFAULT 0,
+    out_errors UInt32 DEFAULT 0,
+    in_discards UInt32 DEFAULT 0,
+    out_discards UInt32 DEFAULT 0,
     collected_at DateTime
 ) ENGINE = MergeTree()
 ORDER BY collected_at;
