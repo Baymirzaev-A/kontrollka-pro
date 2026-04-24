@@ -15,9 +15,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     ObjectType, ObjectIdentity, ContextData, SnmpEngine
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
-
-from pysnmp.smi.rfc1902 import Integer32, OctetString
-
+from pysnmp.hlapi.v3arch.asyncio.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
 
 # MIB билдер для определения вендоров
