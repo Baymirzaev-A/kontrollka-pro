@@ -633,24 +633,24 @@ def group_console():
     return render_template('group.html', devices=devices)
 
 
-@app.route('/configs')
-@login_required
-def configs_page():
-    """Страница со всеми сохраненными конфигурациями"""
-    configs = db.get_all_configs(100)
-    return render_template('configs.html', configs=configs)
+#@app.route('/configs')
+#@login_required
+#def configs_page():
+    #"""Страница со всеми сохраненными конфигурациями"""
+    #configs = db.get_all_configs(100)
+    #return render_template('configs.html', configs=configs)
 
 
-@app.route('/config/<int:config_id>')
-@login_required
-def view_config(config_id):
-    """Страница просмотра конфигурации"""
-    config = db.get_config(config_id)
-    if not config:
-        return redirect(url_for('configs_page'))
+#@app.route('/config/<int:config_id>')
+#@login_required
+#def view_config(config_id):
+#    """Страница просмотра конфигурации"""
+#    config = db.get_config(config_id)
+#    if not config:
+#        return redirect(url_for('configs_page'))
 
-    device = db.get_device(config['device_id'])
-    return render_template('view_config.html', config=config, device=device)
+#    device = db.get_device(config['device_id'])
+#    return render_template('view_config.html', config=config, device=device)
 
 
 # ==== API ДЛЯ ПРОВЕРКИ СТАТУСА УСТРОЙСТВ ====

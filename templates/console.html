@@ -90,15 +90,18 @@
                 📁 Для серверов сохранение конфигураций не поддерживается.
             </div>
             {% else %}
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <div class="configs-actions">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+                <div class="configs-actions" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                    <select id="configVersionSelect" class="form-control" style="width: auto; min-width: 250px;">
+                        <option value="latest">-- Последний (текущий) --</option>
+                    </select>
                     <button id="downloadConfigBtn" class="btn btn-info" onclick="downloadCurrentConfig()">💾 Скачать</button>
                     <button id="diffModeBtn" class="btn btn-primary" onclick="toggleDiffMode()">🔀 Diff</button>
                 </div>
-                <div id="versionSelectContainer" style="display: none;">
-                    <label>Версия для сравнения:</label>
-                    <select id="compareVersionSelect" class="form-control" style="width: auto; display: inline-block; margin-left: 0.5rem;">
-                        <option value="">Выберите версию</option>
+                <div id="compareVersionContainer" style="display: none;">
+                    <label style="margin-right: 0.5rem;">Сравнить с:</label>
+                    <select id="compareVersionSelect" class="form-control" style="width: auto; min-width: 250px;">
+                        <option value="">-- Выберите версию --</option>
                     </select>
                 </div>
             </div>
@@ -620,709 +623,20 @@
         }
 
         // ========== ЛОГИКА КОНФИГУРАЦИЙ ==========
-
-        let configsCurrentPage = 1;
-        let configsTotalPages = 1;
-        let configsPerPage = 20;
-        let currentSearchQuery = '';
-
-        async function loadConfigs(page = 1, search = '') {
-            configsCurrentPage = page;
-            currentSearchQuery = search;
-
-            const container = document.getElementById('configs-list');
-            if (!container) return;
-
-            container.innerHTML = '<div class="loading">Загрузка...</div>';
-
-            let url = `/api/device/${deviceId}/configs?page=${page}&per_page=${configsPerPage}`;
-            if (search) {
-                url += `&search=${encodeURIComponent(search)}`;
-            }
-
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-
-                configsTotalPages = data.pages;
-
-                if (data.items.length === 0) {
-                    container.innerHTML = '<div class="loading">Нет сохранённых конфигураций</div>';
-                    renderConfigsPagination();
-                    return;
-                }
-
-                container.innerHTML = data.items.map(config => `
-                    <div class="config-item" onclick="viewConfig(${config.id})">
-                        <div class="config-info">
-                            <strong>Конфигурация #${config.id}</strong>
-                            <span class="config-date">${new Date(config.saved_at).toLocaleString()}</span>
-                            ${config.saved_by ? `<span class="config-user">👤 ${config.saved_by}</span>` : ''}
-                        </div>
-                        <div class="config-actions" onclick="event.stopPropagation()">
-                            <button class="btn btn-sm btn-primary" onclick="viewConfig(${config.id})">👁️ Просмотр</button>
-                            <button class="btn btn-sm btn-info" onclick="downloadConfig(${config.id})">💾 Скачать</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteConfig(${config.id})">🗑️ Удалить</button>
-                        </div>
-                    </div>
-                `).join('');
-
-                renderConfigsPagination();
-
-            } catch (error) {
-                container.innerHTML = '<div class="loading">Ошибка загрузки конфигураций</div>';
-            }
-        }
-
-        function renderConfigsPagination() {
-            const container = document.getElementById('configs-pagination');
-            if (!container) return;
-
-            if (configsTotalPages <= 1) {
-                container.innerHTML = '';
-                return;
-            }
-
-            let html = '<div class="pagination">';
-            if (configsCurrentPage > 1) {
-                html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${configsCurrentPage - 1}, '${currentSearchQuery}')">← Предыдущая</button>`;
-            }
-            html += `<span style="padding: 0.5rem;">${configsCurrentPage} / ${configsTotalPages}</span>`;
-            if (configsCurrentPage < configsTotalPages) {
-                html += `<button class="btn btn-sm btn-secondary" onclick="loadConfigs(${configsCurrentPage + 1}, '${currentSearchQuery}')">Следующая →</button>`;
-            }
-            html += '</div>';
-            container.innerHTML = html;
-        }
-
-        function saveConfig() {
-            fetch(`/api/device/${deviceId}/save_config`, { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('✅ Конфигурация сохранена');
-                        loadConfigs(configsCurrentPage, currentSearchQuery);
-                    } else {
-                        alert('❌ Ошибка: ' + data.error);
-                    }
-                })
-                .catch(error => alert('Ошибка: ' + error));
-        }
-
-        function viewConfig(configId) {
-            window.location.href = `/config/${configId}`;
-        }
-
-        function downloadConfig(configId) {
-            window.location.href = `/api/config/${configId}/download`;
-        }
-
-        function deleteConfig(configId) {
-            if (!confirm('🗑️ Удалить конфигурацию? Это действие нельзя отменить.')) return;
-
-            // Используем тот же маршрут, что и в глобальной странице
-            fetch(`/config/${configId}/delete`, { method: 'GET' })
-                .then(response => {
-                    if (response.ok) {
-                        alert('✅ Конфигурация удалена');
-                        loadConfigs(configsCurrentPage, currentSearchQuery);
-                    } else {
-                        alert('❌ Ошибка удаления');
-                    }
-                })
-                .catch(error => {
-                    alert('❌ Ошибка: ' + error);
-                });
-        }
-
-        // ========== ИНИЦИАЛИЗАЦИЯ ==========
-
-        // Переключение вкладок
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const tabId = btn.dataset.tab;
-
-                // Обновляем кнопки
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-
-                // Обновляем контент
-                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                document.getElementById(`tab-${tabId}`).classList.add('active');
-
-                // Загружаем конфигурации если открыли вкладку
-                if (tabId === 'configs' && devicePurpose !== 'server') {
-                    loadConfigsViewer();
-                }
-                if (tabId === 'info') {
-                    loadDeviceInfo();
-                }
-
-                if (tabId === 'ports') {
-                    loadPorts();
-                }
-                if (tabId === 'neighbors') {
-                    loadNeighbors();
-                }
-            });
-        });
-
-        // Обработка ввода
-        commandInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const command = commandInput.value;
-                commandInput.value = '';
-                executeCommand(command);
-            }
-        });
-
-        commandInput.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                navigateHistory(-1);
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                navigateHistory(1);
-            }
-        });
-
-        sendBtn.addEventListener('click', () => {
-            const command = commandInput.value;
-            commandInput.value = '';
-            executeCommand(command);
-        });
-
-        // Поиск по конфигурациям
-        const searchInput = document.getElementById('config-search');
-        if (searchInput) {
-            let debounceTimer;
-            searchInput.addEventListener('input', (e) => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                    loadConfigs(1, e.target.value);
-                }, 300);
-            });
-        }
-
-        // Фокус на поле ввода
-        commandInput.focus();
-
-        // ===== УПРАВЛЕНИЕ ДАННЫМИ УСТРОЙСТВА =====
-        let currentDeviceData = {};
-        let editMode = false;
-
-        async function loadDeviceInfo() {
-            const container = document.getElementById('device-info-content');
-            if (!container) return;
-
-            container.innerHTML = '<div class="loading">Загрузка данных...</div>';
-
-            try {
-                const deviceResponse = await fetch(`/api/device/${deviceId}`);
-                const deviceData = await deviceResponse.json();
-                currentDeviceData = deviceData;
-
-                // SNMP данные (если недоступны — просто прочерки)
-                let snmpData = {};
-                try {
-                    const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(deviceData.host)}`, {
-                        mode: 'cors',
-                        credentials: 'include'
-                    });
-                    if (snmpResponse.ok) {
-                        snmpData = await snmpResponse.json();
-                    }
-                } catch (e) {
-                    console.warn('DARIA unavailable:', e);
-                    // snmpData остаётся пустым → везде будут прочерки
-                }
-
-                container.innerHTML = `
-                    <div class="info-grid">
-                        <div class="info-card">
-                            <h4>📋 Ручной ввод</h4>
-                            <table class="info-table editable-table">
-                                <tbody>
-                                    <tr><th>Имя</th><td class="editable" data-field="name">${escapeHtml(deviceData.name)}</td></tr>
-                                    <tr><th>IP адрес</th><td class="editable" data-field="host">${escapeHtml(deviceData.host)}</td></tr>
-                                    <tr><th>Тип устройства</th>
-                                        <td class="editable-select" data-field="device_type" data-value="${escapeHtml(deviceData.device_type)}">
-                                            <span class="display-value">${getDeviceTypeLabel(deviceData.device_type)}</span>
-                                            <select class="edit-select" style="display: none;">
-                                                <optgroup label="Cisco">
-                                                    <option value="cisco_ios">Cisco IOS / IOS-XE</option>
-                                                    <option value="cisco_nxos">Cisco NX-OS</option>
-                                                    <option value="cisco_xr">Cisco IOS-XR</option>
-                                                    <option value="cisco_asa">Cisco ASA</option>
-                                                </optgroup>
-                                                <optgroup label="Huawei">
-                                                    <option value="huawei">Huawei VRP</option>
-                                                    <option value="huawei_vrpv8">Huawei CE / VRPv8</option>
-                                                    <option value="huawei_olt">Huawei OLT</option>
-                                                </optgroup>
-                                                <optgroup label="Juniper">
-                                                    <option value="juniper">Juniper JunOS</option>
-                                                </optgroup>
-                                                <optgroup label="Arista">
-                                                    <option value="arista_eos">Arista EOS</option>
-                                                </optgroup>
-                                                <optgroup label="HP / Aruba">
-                                                    <option value="hp_procurve">HP ProCurve</option>
-                                                    <option value="hp_comware">HP Comware</option>
-                                                    <option value="aruba_os">ArubaOS</option>
-                                                </optgroup>
-                                                <optgroup label="Dell">
-                                                    <option value="dell_force10">Dell Force10 / OS9</option>
-                                                    <option value="dell_os10">Dell OS10</option>
-                                                    <option value="dell_powerconnect">Dell PowerConnect</option>
-                                                </optgroup>
-                                                <optgroup label="Extreme">
-                                                    <option value="extreme_exos">Extreme EXOS</option>
-                                                    <option value="extreme_ers">Extreme ERS</option>
-                                                    <option value="extreme_nos">Extreme NOS</option>
-                                                </optgroup>
-                                                <optgroup label="Fortinet">
-                                                    <option value="fortinet">FortiGate</option>
-                                                </optgroup>
-                                                <optgroup label="Alcatel / Nokia">
-                                                    <option value="alcatel_sros">Nokia SR-OS</option>
-                                                </optgroup>
-                                                <optgroup label="Brocade / Ruckus">
-                                                    <option value="brocade_fastiron">Brocade FastIron</option>
-                                                    <option value="brocade_netiron">Brocade NetIron</option>
-                                                </optgroup>
-                                                <optgroup label="Eltex">
-                                                    <option value="eltex">Eltex ESP</option>
-                                                    <option value="eltex_esr">Eltex ESR</option>
-                                                </optgroup>
-                                                <optgroup label="MikroTik">
-                                                    <option value="mikrotik_routeros">MikroTik RouterOS</option>
-                                                </optgroup>
-                                                <optgroup label="Linux / Generic">
-                                                    <option value="linux">Linux / Unix (SSH)</option>
-                                                    <option value="generic_termserver">Generic Terminal Server</option>
-                                                </optgroup>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                    <tr><th>Порт SSH</th><td class="editable" data-field="port">${deviceData.port}</td></tr>
-                                    <tr><th>Назначение</th>
-                                        <td class="editable-select" data-field="purpose" data-value="${escapeHtml(deviceData.purpose)}">
-                                            <span class="display-value">${getPurposeLabel(deviceData.purpose)}</span>
-                                            <select class="edit-select" style="display: none;">
-                                                <option value="router">Роутер</option>
-                                                <option value="switch">Коммутатор</option>
-                                                <option value="firewall">Файрвол</option>
-                                                <option value="server">Сервер</option>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <th>SNMP версия</th>
-                                        <td class="editable-select" data-field="snmp_version" data-value="${escapeHtml(deviceData.snmp_version)}">
-                                            <span class="display-value">${escapeHtml(deviceData.snmp_version || 'v2c')}</span>
-                                            <select class="edit-select" style="display: none;">
-                                                <option value="v1">SNMP v1</option>
-                                                <option value="v2c">SNMP v2c</option>
-                                                <option value="v3">SNMP v3</option>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                    <tr><th>Группа (Ansible)</th><td class="editable" data-field="group">${escapeHtml(deviceData.group) || '—'}</td></tr>
-                                    <tr><th>Площадка</th><td class="editable" data-field="site">${escapeHtml(deviceData.site) || '—'}</td></tr>
-                                    <tr><th>Описание</th><td class="editable" data-field="description">${escapeHtml(deviceData.description) || '—'}</td></tr>
-                                </tbody>
-                            </table>
-                             <div style="margin-top: 1rem;">
-                                <button id="saveDeviceBtn" class="btn btn-success" style="display: none;" onclick="saveDeviceData()">💾 Сохранить изменения</button>
-                            </div>
-                        </div>
-
-                        <div class="info-card">
-                            <h4>📡 SNMP данные (автосбор)</h4>
-                            <table class="info-table">
-                                <tr><th>Вендор</th><td>${escapeHtml(snmpData.vendor) || '—'}</td></tr>
-                                <tr><th>Версия ПО</th><td>${escapeHtml(snmpData.firmware) || '—'}</td></tr>
-                                <tr><th>Серийный номер</th><td>${escapeHtml(snmpData.serial) || '—'}</td></tr>
-                                <tr><th>Альтернативное имя</th><td>${escapeHtml(snmpData.sys_name) || '—'}</td></tr>
-                                <tr><th>Локация</th><td>${escapeHtml(snmpData.location) || '—'}</td></tr>
-                                <tr><th>Контакты</th><td>${escapeHtml(snmpData.contact) || '—'}</td></tr>
-                                <tr><th>Последний сбор</th><td>${snmpData.last_collected ? new Date(snmpData.last_collected).toLocaleString() : '—'}</td></tr>
-                            </table>
-                            <button class="btn btn-sm btn-info" onclick="refreshDeviceInfo()" style="margin-top: 1rem;">🔄 Обновить SNMP данные</button>
-                        </div>
-                    </div>
-                `;
-
-                attachEditHandlers();
-            } catch (error) {
-                console.error(error);
-                container.innerHTML = '<div class="loading">Ошибка загрузки, обновите страницу</div>';
-            }
-        }
-
-        function attachEditHandlers() {
-            let hasChanges = false;
-
-            function showSaveButton() {
-                if (!hasChanges) {
-                    hasChanges = true;
-                    document.getElementById('saveDeviceBtn').style.display = 'inline-block';
-                }
-            }
-
-            // Текстовые поля
-            document.querySelectorAll('.editable').forEach(cell => {
-                cell.addEventListener('click', function(e) {
-                    e.stopPropagation();
-
-                    const field = this.dataset.field;
-                    const oldValue = this.innerText;
-                    const currentValue = currentDeviceData[field] || '';
-
-                    const input = document.createElement('input');
-                    input.type = 'text';
-                    input.value = oldValue === '—' ? '' : oldValue;
-                    input.className = 'edit-input';
-                    input.style.width = '100%';
-                    input.style.padding = '4px';
-
-                    this.innerHTML = '';
-                    this.appendChild(input);
-                    input.focus();
-
-                    const save = () => {
-                        const newValue = input.value.trim();
-                        this.innerText = newValue || '—';
-                        currentDeviceData[field] = newValue;
-                        showSaveButton();
-                    };
-
-                    input.addEventListener('blur', save);
-                    input.addEventListener('keypress', (e) => {
-                        if (e.key === 'Enter') {
-                            save();
-                            input.blur();
-                        }
-                    });
-                });
-            });
-
-            // Select поля
-            document.querySelectorAll('.editable-select').forEach(cell => {
-                cell.addEventListener('click', function(e) {
-                    e.stopPropagation();
-
-                    const field = this.dataset.field;
-                    const select = this.querySelector('.edit-select');
-                    const display = this.querySelector('.display-value');
-
-                    display.style.display = 'none';
-                    select.style.display = 'block';
-                    select.focus();
-
-                    const save = () => {
-                        const newValue = select.value;
-                        const newLabel = select.options[select.selectedIndex].text;
-                        currentDeviceData[field] = newValue;
-                        display.innerText = newLabel;
-                        display.style.display = 'inline';
-                        select.style.display = 'none';
-                        showSaveButton();
-                    };
-
-                    select.addEventListener('change', save);
-                    select.addEventListener('blur', save);
-                });
-            });
-        }
-
-        function saveEditField(field, newValue, cell) {
-            currentDeviceData[field] = newValue;
-            cell.innerText = newValue || '—';
-            editMode = false;
-            document.getElementById('saveDeviceBtn').style.display = 'inline-block';
-        }
-
-        async function saveDeviceData() {
-            const btn = document.getElementById('saveDeviceBtn');
-            const originalText = btn.innerText;
-            btn.innerText = '⏳ Сохранение...';
-            btn.disabled = true;
-
-            const formData = new FormData();
-            formData.append('name', currentDeviceData.name || '');
-            formData.append('host', currentDeviceData.host || '');
-            formData.append('device_type', currentDeviceData.device_type || 'huawei');
-            formData.append('port', currentDeviceData.port || 22);
-            formData.append('purpose', currentDeviceData.purpose || 'router');
-            formData.append('snmp_version', currentDeviceData.snmp_version || 'v2c');
-            formData.append('group', currentDeviceData.group || '');
-            formData.append('site', currentDeviceData.site || '');
-            formData.append('description', currentDeviceData.description || '');
-
-            try {
-                const response = await fetch(`/device/${deviceId}/update`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (response.ok) {
-                    alert('✅ Данные сохранены');
-                    btn.style.display = 'none';
-                    // Обновляем страницу, чтобы показать свежие данные
-                    loadDeviceInfo();
-                } else {
-                    alert('❌ Ошибка сохранения');
-                }
-            } catch (error) {
-                alert('❌ Ошибка: ' + error);
-            } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
-            }
-        }
-
-        async function refreshDeviceInfo() {
-            const container = document.getElementById('device-info-content');
-            const originalHtml = container.innerHTML;
-            container.innerHTML = '<div class="loading">Сбор SNMP данных...</div>';
-
-            try {
-                const response = await fetch(`/api/device/${deviceId}/rediscover`, { method: 'POST' });
-                if (!response.ok) {
-                    throw new Error('Ошибка опроса');
-                }
-                setTimeout(() => loadDeviceInfo(), 3000);
-            } catch (error) {
-                container.innerHTML = originalHtml;
-                // Просто показываем всплывающее уведомление, а не ломаем страницу
-                alert('❌ Не удалось опросить устройство по SNMP');
-            }
-        }
-
-        function showLoading() {
-            let loader = document.getElementById('global-loader');
-            if (!loader) {
-                loader = document.createElement('div');
-                loader.id = 'global-loader';
-                loader.style.cssText = `
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(0,0,0,0.5);
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    z-index: 9999;
-                `;
-                loader.innerHTML = '<div style="background: white; padding: 1rem 2rem; border-radius: 8px;">⏳ Загрузка...</div>';
-                document.body.appendChild(loader);
-            }
-            loader.style.display = 'flex';
-        }
-
-        function hideLoading() {
-            const loader = document.getElementById('global-loader');
-            if (loader) {
-                loader.style.display = 'none';
-            }
-        }
-
-        async function loadPorts() {
-            const container = document.getElementById('ports-content');
-            container.innerHTML = '<div class="loading">Загрузка...</div>';
-
-            if (!currentDeviceData.host) {
-                await loadDeviceInfo();
-            }
-
-            try {
-                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
-                    mode: 'cors',
-                    credentials: 'include'
-                });
-                const data = await snmpResponse.json();
-                const interfaces = data.interfaces || [];
-
-                // Пагинация
-                const itemsPerPage = 20;
-                let currentPage = 1;
-                let totalPages = Math.ceil(interfaces.length / itemsPerPage);
-
-                function getInterfaceTypeName(ifType) {
-                    const types = {
-                        '1': 'other', '6': 'ethernet', '24': 'loopback', '32': 'frameRelay',
-                        '53': 'propVirtual', '54': 'ppp', '56': 'slip', '62': 'atm',
-                        '63': 'modem', '69': 'v35', '71': 't1', '72': 't3', '73': 'e1',
-                        '75': 'e3', '77': 'fddi', '94': 'framerelay', '117': 'gigabitEthernet',
-                        '118': 'tunnel', '119': 'vlan', '131': 'tunnel', '135': 'vdsl',
-                        '136': 'fiberChannel', '161': '10gigabitEthernet', '162': 'vlan',
-                        '166': 'bridge', '168': 'ieee80211', '169': 'adsl', '170': 'gpon'
-                    };
-                    return types[ifType] || ifType || '—';
-                }
-
-                function getSpeedMbps(speed) {
-                    if (!speed) return '—';
-                    const speedNum = parseInt(speed);
-                    if (speedNum >= 1000000000) return `${speedNum / 1000000000} Gbps`;
-                    if (speedNum >= 1000000) return `${speedNum / 1000000} Mbps`;
-                    return `${speedNum} bps`;
-                }
-
-                function hasErrors(iface) {
-                    return (iface.in_errors > 0 || iface.out_errors > 0 ||
-                            iface.in_discards > 0 || iface.out_discards > 0);
-                }
-
-                function renderPage(page) {
-                    currentPage = page;
-                    const start = (page - 1) * itemsPerPage;
-                    const end = start + itemsPerPage;
-                    const pageInterfaces = interfaces.slice(start, end);
-
-                    container.innerHTML = `
-                        <div class="info-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                                <h4 style="margin: 0;">🔌 Интерфейсы</h4>
-                                <div class="pagination-controls">
-                                    <button class="btn btn-sm btn-secondary" onclick="loadPortsPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>←</button>
-                                    <span style="margin: 0 0.5rem;">${page} / ${totalPages}</span>
-                                    <button class="btn btn-sm btn-secondary" onclick="loadPortsPage(${page + 1})" ${page === totalPages ? 'disabled' : ''}>→</button>
-                                </div>
-                            </div>
-                            <div style="overflow-x: auto;">
-                                <table class="info-table interfaces-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Имя</th>
-                                            <th>Тип</th>
-                                            <th>Скорость</th>
-                                            <th>Входящие ошибки</th>
-                                            <th>Исходящие ошибки</th>
-                                            <th>Discards</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${pageInterfaces.map(iface => `
-                                            <tr>
-                                                <td class="${hasErrors(iface) ? 'interface-error' : ''}">
-                                                    <code>${escapeHtml(iface.name)}</code>
-                                                    ${hasErrors(iface) ? '<span class="error-icon" title="На порту есть ошибки!">⚠️</span>' : ''}
-                                                </td>
-                                                <td>${escapeHtml(getInterfaceTypeName(iface.type))}</td>
-                                                <td>${getSpeedMbps(iface.speed)}</td>
-                                                <td class="${iface.in_errors > 0 ? 'error-value' : ''}">${iface.in_errors || 0}</td>
-                                                <td class="${iface.out_errors > 0 ? 'error-value' : ''}">${iface.out_errors || 0}</td>
-                                                <td class="${(iface.in_discards > 0 || iface.out_discards > 0) ? 'error-value' : ''}">
-                                                    ${(iface.in_discards || 0) + (iface.out_discards || 0)}
-                                                </td>
-                                            </tr>
-                                        `).join('') || '<tr><td colspan="6">Нет данных</td></tr>'}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                }
-
-                renderPage(1);
-
-                // Сохраняем функции в глобальную область для вызова из кнопок
-                window.loadPortsPage = function(page) {
-                    if (page >= 1 && page <= totalPages) {
-                        renderPage(page);
-                    }
-                };
-
-            } catch (error) {
-                console.error('Error loading ports:', error);
-                container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных от SNMP</div>';
-            }
-        }
-
-        async function loadNeighbors() {
-            const container = document.getElementById('neighbors-content');
-            container.innerHTML = '<div class="loading">Загрузка...</div>';
-
-            if (!currentDeviceData.host) {
-                await loadDeviceInfo();
-            }
-
-            try {
-                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
-                    mode: 'cors',
-                    credentials: 'include'
-                });
-                const data = await snmpResponse.json();
-                const neighbors = data.neighbors || [];
-
-                // Пагинация
-                const itemsPerPage = 20;
-                let currentPage = 1;
-                let totalPages = Math.ceil(neighbors.length / itemsPerPage);
-
-                function renderNeighborsPage(page) {
-                    currentPage = page;
-                    const start = (page - 1) * itemsPerPage;
-                    const end = start + itemsPerPage;
-                    const pageNeighbors = neighbors.slice(start, end);
-
-                    container.innerHTML = `
-                        <div class="info-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                                <h4 style="margin: 0;">🔄 Соседи (LLDP/CDP)</h4>
-                                <div class="pagination-controls">
-                                    <button class="btn btn-sm btn-secondary" onclick="loadNeighborsPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>←</button>
-                                    <span style="margin: 0 0.5rem;">${page} / ${totalPages}</span>
-                                    <button class="btn btn-sm btn-secondary" onclick="loadNeighborsPage(${page + 1})" ${page === totalPages ? 'disabled' : ''}>→</button>
-                                </div>
-                            </div>
-                            <div style="overflow-x: auto;">
-                                <table class="info-table neighbors-table">
-                                    <thead>
-                                        <tr><th>Локальный порт</th><th>Сосед</th><th>Порт соседа</th><th>Протокол</th></tr>
-                                    </thead>
-                                    <tbody>
-                                        ${pageNeighbors.map(neighbor => `
-                                            <tr>
-                                                <td><code>${escapeHtml(neighbor.local_port)}</code></td>
-                                                <td><strong>${escapeHtml(neighbor.neighbor_id)}</strong></td>
-                                                <td><code>${escapeHtml(neighbor.remote_port) || '—'}</code></td>
-                                                <td><span class="badge">${escapeHtml(neighbor.protocol)}</span></td>
-                                            </tr>
-                                        `).join('') || '<tr><td colspan="4">Нет данных</td></tr>'}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                }
-
-                renderNeighborsPage(1);
-
-                // Сохраняем функцию в глобальную область для вызова из кнопок
-                window.loadNeighborsPage = function(page) {
-                    if (page >= 1 && page <= totalPages) {
-                        renderNeighborsPage(page);
-                    }
-                };
-
-            } catch (error) {
-                console.error('Error loading neighbors:', error);
-                container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных от SNMP</div>';
-            }
-        }
+        let diffMode = false;
+        let currentConfig = '';
+        let configsList = [];
+        let selectedConfigId = 'latest';
+        let selectedConfigText = '';
+        let compareConfigId = '';
+        let compareConfigText = '';
 
         async function loadConfigsViewer() {
             const container = document.getElementById('configs-viewer');
             container.innerHTML = '<div class="loading">Загрузка...</div>';
 
             if (!currentDeviceData.host) {
-                await loadDeviceInfo();  // сначала загружаем данные устройства
+                await loadDeviceInfo();
             }
 
             try {
@@ -1335,10 +649,60 @@
                 currentConfig = data.config || 'Конфигурация не найдена';
 
                 // Получаем список сохранённых конфигураций (история)
-                const historyResponse = await fetch(`/api/device/${deviceId}/configs?per_page=50`);
+                const historyResponse = await fetch(`/api/device/${deviceId}/configs?per_page=100`);
                 const history = await historyResponse.json();
                 configsList = history.items;
 
+                // Заполняем основной выпадающий список
+                const mainSelect = document.getElementById('configVersionSelect');
+                mainSelect.innerHTML = '<option value="latest">-- Последний (текущий) --</option>';
+
+                configsList.forEach(config => {
+                    const date = new Date(config.saved_at).toLocaleString();
+                    mainSelect.innerHTML += `<option value="${config.id}">${date} ${config.saved_by ? `(👤 ${config.saved_by})` : ''}</option>`;
+                });
+
+                // Заполняем список для сравнения
+                const compareSelect = document.getElementById('compareVersionSelect');
+                compareSelect.innerHTML = '<option value="">-- Выберите версию --</option>';
+                configsList.forEach(config => {
+                    const date = new Date(config.saved_at).toLocaleString();
+                    compareSelect.innerHTML += `<option value="${config.id}">${date} ${config.saved_by ? `(👤 ${config.saved_by})` : ''}</option>`;
+                });
+
+                // Обработчик выбора основного конфига
+                mainSelect.onchange = async () => {
+                    selectedConfigId = mainSelect.value;
+                    if (selectedConfigId === 'latest') {
+                        selectedConfigText = currentConfig;
+                    } else {
+                        const selected = configsList.find(c => c.id == selectedConfigId);
+                        if (selected) {
+                            selectedConfigText = selected.config_text;
+                        }
+                    }
+                    renderConfigViewer();
+                };
+
+                // Обработчик выбора конфига для сравнения
+                compareSelect.onchange = () => {
+                    compareConfigId = compareSelect.value;
+                    if (compareConfigId === '') {
+                        compareConfigText = '';
+                    } else {
+                        const selected = configsList.find(c => c.id == compareConfigId);
+                        if (selected) {
+                            compareConfigText = selected.config_text;
+                        }
+                    }
+                    renderConfigViewer();
+                };
+
+                // По умолчанию показываем последний
+                selectedConfigId = 'latest';
+                selectedConfigText = currentConfig;
+                compareConfigId = '';
+                compareConfigText = '';
                 renderConfigViewer();
 
             } catch (error) {
@@ -1350,59 +714,120 @@
         function renderConfigViewer() {
             const container = document.getElementById('configs-viewer');
 
-            if (diffMode && document.getElementById('compareVersionSelect').value) {
-                const selectedVersion = configsList.find(c => c.id == document.getElementById('compareVersionSelect').value);
-                if (selectedVersion) {
-                    container.innerHTML = `
-                        <div style="display: flex; gap: 1rem;">
-                            <div style="flex: 1;">
-                                <h5>Текущая конфигурация</h5>
-                                <pre class="config-pre" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; max-height: 600px; overflow-y: auto;">${escapeHtml(currentConfig)}</pre>
-                            </div>
-                            <div style="flex: 1;">
-                                <h5>Версия от ${new Date(selectedVersion.saved_at).toLocaleString()}</h5>
-                                <pre class="config-pre" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; max-height: 600px; overflow-y: auto;">${escapeHtml(selectedVersion.config_text)}</pre>
-                            </div>
-                        </div>
-                    `;
-                    return;
+            // Если не в Diff режиме или нет выбранного конфига для сравнения - показываем один конфиг
+            if (!diffMode || !compareConfigText) {
+                let title = '📄 Конфигурация';
+                if (selectedConfigId === 'latest') {
+                    title = '📄 Текущая конфигурация (последняя)';
+                } else {
+                    const selected = configsList.find(c => c.id == selectedConfigId);
+                    if (selected) {
+                        title = `📄 Конфигурация от ${new Date(selected.saved_at).toLocaleString()}`;
+                    }
                 }
+
+                container.innerHTML = `
+                    <div class="info-card">
+                        <h4>${title}</h4>
+                        <pre class="config-pre" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; max-height: 600px; overflow-y: auto; font-family: monospace; font-size: 12px;">${escapeHtml(selectedConfigText)}</pre>
+                    </div>
+                `;
+                return;
             }
 
-            // Обычный просмотр
-            container.innerHTML = `
-                <pre class="config-pre" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; max-height: 600px; overflow-y: auto;">${escapeHtml(currentConfig)}</pre>
+            // Diff режим - side by side с подсветкой различий
+            const leftLines = selectedConfigText.split('\n');
+            const rightLines = compareConfigText.split('\n');
+            const maxLines = Math.max(leftLines.length, rightLines.length);
+
+            // Получаем название для правой версии
+            const compareSelected = configsList.find(c => c.id == compareConfigId);
+            const compareTitle = compareSelected ? `от ${new Date(compareSelected.saved_at).toLocaleString()}` : 'выбранной версии';
+
+            let html = `
+                <div style="display: flex; gap: 1rem;">
+                    <div style="flex: 1;">
+                        <h5>📌 ${selectedConfigId === 'latest' ? 'Текущая конфигурация' : `Конфигурация от ${new Date(configsList.find(c => c.id == selectedConfigId)?.saved_at).toLocaleString()}`}</h5>
+                        <pre class="config-pre" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; max-height: 600px; overflow-y: auto; font-family: monospace; font-size: 12px;">`;
+
+            for (let i = 0; i < maxLines; i++) {
+                const leftLine = i < leftLines.length ? leftLines[i] : '';
+                const rightLine = i < rightLines.length ? rightLines[i] : '';
+                let className = '';
+
+                if (leftLine !== rightLine && rightLine !== '') {
+                    className = ' style="background-color: #4a6a3a; display: block;"';
+                } else if (leftLine !== rightLine && rightLine === '') {
+                    className = ' style="background-color: #6a3a3a; display: block;"';
+                }
+
+                html += `<div${className}>${escapeHtml(leftLine)}</div>`;
+            }
+
+            html += `</pre>
+                    </div>
+                    <div style="flex: 1;">
+                        <h5>📅 Сравнение с конфигурацией ${compareTitle}</h5>
+                        <pre class="config-pre" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow-x: auto; border-radius: 4px; max-height: 600px; overflow-y: auto; font-family: monospace; font-size: 12px;">`;
+
+            for (let i = 0; i < maxLines; i++) {
+                const leftLine = i < leftLines.length ? leftLines[i] : '';
+                const rightLine = i < rightLines.length ? rightLines[i] : '';
+                let className = '';
+
+                if (leftLine !== rightLine && rightLine !== '') {
+                    className = ' style="background-color: #4a6a3a; display: block;"';
+                } else if (leftLine !== rightLine && rightLine === '') {
+                    className = ' style="background-color: #6a3a3a; display: block;"';
+                } else if (leftLine === '' && rightLine !== '') {
+                    className = ' style="background-color: #3a6a6a; display: block;"';
+                }
+
+                html += `<div${className}>${escapeHtml(rightLine)}</div>`;
+            }
+
+            html += `</pre>
+                    </div>
+                </div>
             `;
+
+            container.innerHTML = html;
         }
 
         function toggleDiffMode() {
             diffMode = !diffMode;
             const btn = document.getElementById('diffModeBtn');
-            const versionSelect = document.getElementById('versionSelectContainer');
+            const compareContainer = document.getElementById('compareVersionContainer');
+            const compareSelect = document.getElementById('compareVersionSelect');
 
             if (diffMode) {
                 btn.classList.add('active');
-                versionSelect.style.display = 'block';
-
-                // Заполняем список версий
-                const select = document.getElementById('compareVersionSelect');
-                select.innerHTML = '<option value="">Выберите версию</option>' +
-                    configsList.map(c => `<option value="${c.id}">${new Date(c.saved_at).toLocaleString()}</option>`).join('');
-
-                select.addEventListener('change', () => renderConfigViewer());
+                btn.style.backgroundColor = '#28a745';
+                compareContainer.style.display = 'block';
+                // Сбрасываем выбор сравнения
+                compareSelect.value = '';
+                compareConfigId = '';
+                compareConfigText = '';
             } else {
                 btn.classList.remove('active');
-                versionSelect.style.display = 'none';
-                renderConfigViewer();
+                btn.style.backgroundColor = '';
+                compareContainer.style.display = 'none';
+                compareConfigId = '';
+                compareConfigText = '';
             }
+            renderConfigViewer();
         }
 
         function downloadCurrentConfig() {
-            const blob = new Blob([currentConfig], { type: 'text/plain' });
+            const text = selectedConfigText;
+            const blob = new Blob([text], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${currentDeviceData.name}_config.txt`;
+            const filename = selectedConfigId === 'latest'
+                ? `${currentDeviceData.name}_config_latest.txt`
+                : `${currentDeviceData.name}_config_${selectedConfigId}.txt`;
+            a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
         }

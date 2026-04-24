@@ -12,7 +12,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData, UsmUserData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol, usmDESPrivProtocol,
-    ObjectType, ObjectIdentity, ContextData
+    ObjectType, ObjectIdentity, ContextData, SnmpEngine
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 
@@ -141,6 +141,7 @@ CONFIG_MIBS = {
 
 class DiscoveryEngine:
     def __init__(self):
+        self.snmp_engine = SnmpEngine()
         self.semaphore = asyncio.Semaphore(50)
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
@@ -522,12 +523,14 @@ class DiscoveryEngine:
     async def _snmp_set(self, ip: str, auth, oid: str, value) -> Optional[bool]:
         async with self.semaphore:
             try:
+                snmp_engine = SnmpEngine()
                 transport = await UdpTransportTarget.create((ip, 161))
                 error_indication, error_status, error_index, var_binds = await set_cmd(
+                    snmp_engine,
                     auth,
                     transport,
-                    ObjectType(ObjectIdentity(oid), value),
-                    ContextData()
+                    ContextData(),
+                    ObjectType(ObjectIdentity(oid), value)
                 )
                 return error_indication is None and error_status == 0
             except Exception as e:
@@ -537,12 +540,14 @@ class DiscoveryEngine:
     async def _snmp_walk(self, ip: str, auth, base_oid: str) -> Optional[List[str]]:
         results = []
         try:
+            snmp_engine = SnmpEngine()
             transport = await UdpTransportTarget.create((ip, 161))
             iterator = next_cmd(
+                snmp_engine,
                 auth,
                 transport,
-                ObjectType(ObjectIdentity(base_oid)),
-                ContextData()
+                ContextData(),
+                ObjectType(ObjectIdentity(oid), value)
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
                 if error_indication or error_status:
@@ -557,12 +562,14 @@ class DiscoveryEngine:
     async def _snmp_get(self, ip: str, auth, oid: str) -> Optional[str]:
         async with self.semaphore:
             try:
+                snmp_engine = SnmpEngine()
                 transport = await UdpTransportTarget.create((ip, 161))
                 error_indication, error_status, error_index, var_binds = await get_cmd(
+                    snmp_engine,
                     auth,
                     transport,
-                    ObjectType(ObjectIdentity(oid)),
                     ContextData(),
+                    ObjectType(ObjectIdentity(oid), value)
                 )
                 if error_indication or error_status:
                     return None
