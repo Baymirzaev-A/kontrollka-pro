@@ -627,6 +627,270 @@
         let compareConfigId = '';
         let compareConfigText = '';
 
+        // ===== УПРАВЛЕНИЕ ДАННЫМИ УСТРОЙСТВА =====
+        let currentDeviceData = {};
+        let editMode = false;
+
+        async function loadDeviceInfo() {
+            const container = document.getElementById('device-info-content');
+            if (!container) return;
+
+            container.innerHTML = '<div class="loading">Загрузка данных...</div>';
+
+            try {
+                const deviceResponse = await fetch(`/api/device/${deviceId}`);
+                const deviceData = await deviceResponse.json();
+                currentDeviceData = deviceData;
+
+                let snmpData = {};
+                try {
+                    const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(deviceData.host)}`, {
+                        mode: 'cors',
+                        credentials: 'include'
+                    });
+                    if (snmpResponse.ok) {
+                        snmpData = await snmpResponse.json();
+                    }
+                } catch (e) {
+                    console.warn('DARIA unavailable:', e);
+                }
+
+                container.innerHTML = `
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <h4>📋 Ручной ввод</h4>
+                            <table class="info-table editable-table">
+                                <tbody>
+                                    <tr><th>Имя</th><td class="editable" data-field="name">${escapeHtml(deviceData.name)}</td></tr>
+                                    <tr><th>IP адрес</th><td class="editable" data-field="host">${escapeHtml(deviceData.host)}</td></tr>
+                                    <tr><th>Тип устройства</th>
+                                        <td class="editable-select" data-field="device_type" data-value="${escapeHtml(deviceData.device_type)}">
+                                            <span class="display-value">${getDeviceTypeLabel(deviceData.device_type)}</span>
+                                            <select class="edit-select" style="display: none;">${getDeviceTypeOptions()}</select>
+                                        </td>
+                                    </tr>
+                                    <tr><th>Порт SSH</th><td class="editable" data-field="port">${deviceData.port}</td></tr>
+                                    <tr><th>Назначение</th>
+                                        <td class="editable-select" data-field="purpose" data-value="${escapeHtml(deviceData.purpose)}">
+                                            <span class="display-value">${getPurposeLabel(deviceData.purpose)}</span>
+                                            <select class="edit-select" style="display: none;">
+                                                <option value="router">Роутер</option>
+                                                <option value="switch">Коммутатор</option>
+                                                <option value="firewall">Файрвол</option>
+                                                <option value="server">Сервер</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <tr><th>SNMP версия</th>
+                                        <td class="editable-select" data-field="snmp_version" data-value="${escapeHtml(deviceData.snmp_version)}">
+                                            <span class="display-value">${escapeHtml(deviceData.snmp_version || 'v2c')}</span>
+                                            <select class="edit-select" style="display: none;">
+                                                <option value="v1">SNMP v1</option>
+                                                <option value="v2c">SNMP v2c</option>
+                                                <option value="v3">SNMP v3</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <tr><th>Группа (Ansible)</th><td class="editable" data-field="group">${escapeHtml(deviceData.group) || '—'}</td></tr>
+                                    <tr><th>Площадка</th><td class="editable" data-field="site">${escapeHtml(deviceData.site) || '—'}</td></tr>
+                                    <tr><th>Описание</th><td class="editable" data-field="description">${escapeHtml(deviceData.description) || '—'}</td></tr>
+                                </tbody>
+                            </table>
+                            <div style="margin-top: 1rem;">
+                                <button id="saveDeviceBtn" class="btn btn-success" style="display: none;" onclick="saveDeviceData()">💾 Сохранить изменения</button>
+                            </div>
+                        </div>
+                        <div class="info-card">
+                            <h4>📡 SNMP данные (автосбор)</h4>
+                            <table class="info-table">
+                                <tr><th>Вендор</th><td>${escapeHtml(snmpData.vendor) || '—'}</td></tr>
+                                <tr><th>Версия ПО</th><td>${escapeHtml(snmpData.firmware) || '—'}</td></tr>
+                                <tr><th>Серийный номер</th><td>${escapeHtml(snmpData.serial) || '—'}</td></tr>
+                                <tr><th>Альтернативное имя</th><td>${escapeHtml(snmpData.sys_name) || '—'}</td></tr>
+                                <tr><th>Локация</th><td>${escapeHtml(snmpData.location) || '—'}</td></tr>
+                                <tr><th>Контакты</th><td>${escapeHtml(snmpData.contact) || '—'}</td></tr>
+                                <tr><th>Последний сбор</th><td>${snmpData.last_collected ? new Date(snmpData.last_collected).toLocaleString() : '—'}</td></tr>
+                            </table>
+                            <button class="btn btn-sm btn-info" onclick="refreshDeviceInfo()" style="margin-top: 1rem;">🔄 Обновить SNMP данные</button>
+                        </div>
+                    </div>
+                `;
+                attachEditHandlers();
+            } catch (error) {
+                console.error(error);
+                container.innerHTML = '<div class="loading">Ошибка загрузки, обновите страницу</div>';
+            }
+        }
+
+        function attachEditHandlers() {
+            let hasChanges = false;
+            function showSaveButton() {
+                if (!hasChanges) {
+                    hasChanges = true;
+                    document.getElementById('saveDeviceBtn').style.display = 'inline-block';
+                }
+            }
+            document.querySelectorAll('.editable').forEach(cell => {
+                cell.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const field = this.dataset.field;
+                    const oldValue = this.innerText;
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = oldValue === '—' ? '' : oldValue;
+                    input.className = 'edit-input';
+                    input.style.width = '100%';
+                    input.style.padding = '4px';
+                    this.innerHTML = '';
+                    this.appendChild(input);
+                    input.focus();
+                    const save = () => {
+                        const newValue = input.value.trim();
+                        this.innerText = newValue || '—';
+                        currentDeviceData[field] = newValue;
+                        showSaveButton();
+                    };
+                    input.addEventListener('blur', save);
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            save();
+                            input.blur();
+                        }
+                    });
+                });
+            });
+            document.querySelectorAll('.editable-select').forEach(cell => {
+                cell.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const field = this.dataset.field;
+                    const select = this.querySelector('.edit-select');
+                    const display = this.querySelector('.display-value');
+                    display.style.display = 'none';
+                    select.style.display = 'block';
+                    select.focus();
+                    const save = () => {
+                        const newValue = select.value;
+                        const newLabel = select.options[select.selectedIndex].text;
+                        currentDeviceData[field] = newValue;
+                        display.innerText = newLabel;
+                        display.style.display = 'inline';
+                        select.style.display = 'none';
+                        showSaveButton();
+                    };
+                    select.addEventListener('change', save);
+                    select.addEventListener('blur', save);
+                });
+            });
+        }
+
+        async function saveDeviceData() {
+            const btn = document.getElementById('saveDeviceBtn');
+            btn.innerText = '⏳ Сохранение...';
+            btn.disabled = true;
+            const formData = new FormData();
+            formData.append('name', currentDeviceData.name || '');
+            formData.append('host', currentDeviceData.host || '');
+            formData.append('device_type', currentDeviceData.device_type || 'huawei');
+            formData.append('port', currentDeviceData.port || 22);
+            formData.append('purpose', currentDeviceData.purpose || 'router');
+            formData.append('snmp_version', currentDeviceData.snmp_version || 'v2c');
+            formData.append('group', currentDeviceData.group || '');
+            formData.append('site', currentDeviceData.site || '');
+            formData.append('description', currentDeviceData.description || '');
+            try {
+                const response = await fetch(`/device/${deviceId}/update`, { method: 'POST', body: formData });
+                if (response.ok) {
+                    alert('✅ Данные сохранены');
+                    btn.style.display = 'none';
+                    loadDeviceInfo();
+                } else {
+                    alert('❌ Ошибка сохранения');
+                }
+            } catch (error) {
+                alert('❌ Ошибка: ' + error);
+            } finally {
+                btn.innerText = '💾 Сохранить изменения';
+                btn.disabled = false;
+            }
+        }
+
+        async function refreshDeviceInfo() {
+            const container = document.getElementById('device-info-content');
+            const originalHtml = container.innerHTML;
+            container.innerHTML = '<div class="loading">Сбор SNMP данных...</div>';
+            try {
+                const response = await fetch(`/api/device/${deviceId}/rediscover`, { method: 'POST' });
+                if (!response.ok) throw new Error('Ошибка опроса');
+                setTimeout(() => loadDeviceInfo(), 3000);
+            } catch (error) {
+                container.innerHTML = originalHtml;
+                alert('❌ Не удалось опросить устройство по SNMP');
+            }
+        }
+
+        async function loadPorts() {
+            const container = document.getElementById('ports-content');
+            container.innerHTML = '<div class="loading">Загрузка...</div>';
+            if (!currentDeviceData.host) await loadDeviceInfo();
+            try {
+                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+                const data = await snmpResponse.json();
+                const interfaces = data.interfaces || [];
+                // ... упрощенный вывод таблицы
+                if (interfaces.length === 0) {
+                    container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных об интерфейсах</div>';
+                    return;
+                }
+                let html = '<div class="info-card"><h4>🔌 Интерфейсы</h4><div style="overflow-x: auto;"><table class="info-table"><thead><tr><th>Имя</th><th>Тип</th><th>Скорость</th><th>Входящие ошибки</th><th>Исходящие ошибки</th></tr></thead><tbody>';
+                interfaces.forEach(iface => {
+                    html += `<tr><td><code>${escapeHtml(iface.name)}</code></td><td>${escapeHtml(iface.type) || '—'}</td><td>${iface.speed || '—'}</td><td class="${iface.in_errors > 0 ? 'error-value' : ''}">${iface.in_errors || 0}</td><td class="${iface.out_errors > 0 ? 'error-value' : ''}">${iface.out_errors || 0}</td></tr>`;
+                });
+                html += '</tbody></table></div></div>';
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading ports:', error);
+                container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных от SNMP</div>';
+            }
+        }
+
+        async function loadNeighbors() {
+            const container = document.getElementById('neighbors-content');
+            container.innerHTML = '<div class="loading">Загрузка...</div>';
+            if (!currentDeviceData.host) await loadDeviceInfo();
+            try {
+                const snmpResponse = await fetch(`${DARIA_API_URL}/api/devices/${encodeURIComponent(currentDeviceData.host)}`, {
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+                const data = await snmpResponse.json();
+                const neighbors = data.neighbors || [];
+                if (neighbors.length === 0) {
+                    container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных о соседях</div>';
+                    return;
+                }
+                let html = '<div class="info-card"><h4>🔄 Соседи (LLDP/CDP)</h4><div style="overflow-x: auto;"><table class="info-table"><thead><tr><th>Локальный порт</th><th>Сосед</th><th>Порт соседа</th><th>Протокол</th></tr></thead><tbody>';
+                neighbors.forEach(neighbor => {
+                    html += `<tr><td><code>${escapeHtml(neighbor.local_port)}</code></td><td><strong>${escapeHtml(neighbor.neighbor_id)}</strong></td><td><code>${escapeHtml(neighbor.remote_port) || '—'}</code></td><td>${escapeHtml(neighbor.protocol)}</td></tr>`;
+                });
+                html += '</tbody></table></div></div>';
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading neighbors:', error);
+                container.innerHTML = '<div class="alert alert-warning">⚠️ Нет данных от SNMP</div>';
+            }
+        }
+
+        function getDeviceTypeOptions() {
+            return `<optgroup label="Cisco"><option value="cisco_ios">Cisco IOS</option><option value="cisco_nxos">Cisco NX-OS</option></optgroup>
+                    <optgroup label="Huawei"><option value="huawei">Huawei VRP</option><option value="huawei_vrpv8">Huawei CE</option></optgroup>
+                    <optgroup label="Juniper"><option value="juniper">Juniper JunOS</option></optgroup>
+                    <optgroup label="Arista"><option value="arista_eos">Arista EOS</option></optgroup>
+                    <optgroup label="Linux"><option value="linux">Linux / Unix</option></optgroup>`;
+        }
+
         async function loadConfigsViewer() {
             const container = document.getElementById('configs-viewer');
             container.innerHTML = '<div class="loading">Загрузка...</div>';
