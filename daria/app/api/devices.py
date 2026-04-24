@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
 from app.core.db import get_neo4j_driver, get_clickhouse_client
 from app.models.device import DeviceResponse
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
