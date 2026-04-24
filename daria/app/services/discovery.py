@@ -16,6 +16,8 @@ from pysnmp.hlapi.v3arch.asyncio import (
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 
+from pysnmp.smi.rfc1902 import Integer32, OctetString
+
 logger = logging.getLogger(__name__)
 
 # MIB билдер для определения вендоров
@@ -146,17 +148,27 @@ class DiscoveryEngine:
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
-            # берём v3 настройки из .env
+            auth_proto = None
+            priv_proto = None
+
+            if os.getenv("SNMP_V3_AUTH_PROTOCOL") == "SHA":
+                auth_proto = usmHMACSHAAuthProtocol
+            else:
+                auth_proto = usmHMACMD5AuthProtocol
+
+            if os.getenv("SNMP_V3_PRIV_PROTOCOL") == "AES":
+                priv_proto = usmAesCfb128Protocol
+            else:
+                priv_proto = usmDESPrivProtocol
+
             return UsmUserData(
-                os.getenv("SNMP_V3_USER", "daria"),  # securityName
-                usmHMACSHAAuthProtocol if os.getenv("SNMP_V3_AUTH_PROTOCOL") == "SHA" else usmHMACMD5AuthProtocol,
-                # authProtocol
-                os.getenv("SNMP_V3_AUTH_PASSWORD", ""),  # authKey
-                usmAesCfb128Protocol if os.getenv("SNMP_V3_PRIV_PROTOCOL") == "AES" else usmDESPrivProtocol,
-                # privProtocol
-                os.getenv("SNMP_V3_PRIV_PASSWORD", ""),  # privKey
+                securityName=os.getenv("SNMP_V3_USER", "daria"),
+                authProtocol=auth_proto,
+                authKey=os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                privProtocol=priv_proto,
+                privKey=os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
             )
-        else:  # v1 или v2c
+        else:
             mpModel = 1 if snmp_version == "v2c" else 0
             community = os.getenv("SNMP_COMMUNITY", "public")
             return CommunityData(community, mpModel=mpModel)
@@ -525,12 +537,16 @@ class DiscoveryEngine:
             try:
                 snmp_engine = SnmpEngine()
                 transport = await UdpTransportTarget.create((ip, 161))
+                if isinstance(value, int):
+                    snmp_value = Integer32(value)
+                else:
+                    snmp_value = OctetString(value)
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     snmp_engine,
                     auth,
                     transport,
                     ContextData(),
-                    ObjectType(ObjectIdentity(oid), value)
+                    ObjectType(ObjectIdentity(oid), snmp_value)
                 )
                 return error_indication is None and error_status == 0
             except Exception as e:
@@ -547,7 +563,7 @@ class DiscoveryEngine:
                 auth,
                 transport,
                 ContextData(),
-                ObjectType(ObjectIdentity(oid), value)
+                ObjectType(ObjectIdentity(base_oid))
             )
             async for error_indication, error_status, error_index, var_binds in iterator:
                 if error_indication or error_status:
@@ -569,7 +585,7 @@ class DiscoveryEngine:
                     auth,
                     transport,
                     ContextData(),
-                    ObjectType(ObjectIdentity(oid), value)
+                    ObjectType(ObjectIdentity(oid))
                 )
                 if error_indication or error_status:
                     return None

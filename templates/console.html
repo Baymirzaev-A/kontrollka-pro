@@ -909,7 +909,7 @@
                 currentConfig = data.config || 'Конфигурация не найдена';
 
                 // Получаем список сохранённых конфигураций (история)
-                const historyResponse = await fetch(`/api/device/${deviceId}/configs?per_page=100`);
+                const historyResponse = await fetch(`${DARIA_API_URL}/api/discovery/device/${currentDeviceData.host}/configs?per_page=100`);
                 const history = await historyResponse.json();
                 configsList = history.items;
 
