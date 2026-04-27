@@ -15,7 +15,6 @@ from pysnmp.hlapi.v3arch.asyncio import (
     ObjectType, ObjectIdentity, ContextData, SnmpEngine
 )
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
-from pysnmp.hlapi.v3arch.asyncio.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
 
 # MIB билдер для определения вендоров
@@ -535,16 +534,13 @@ class DiscoveryEngine:
             try:
                 snmp_engine = SnmpEngine()
                 transport = await UdpTransportTarget.create((ip, 161))
-                if isinstance(value, int):
-                    snmp_value = Integer32(value)
-                else:
-                    snmp_value = OctetString(value)
+
                 error_indication, error_status, error_index, var_binds = await set_cmd(
                     snmp_engine,
                     auth,
                     transport,
                     ContextData(),
-                    ObjectType(ObjectIdentity(oid), snmp_value)
+                    ObjectType(ObjectIdentity(oid), value)
                 )
                 return error_indication is None and error_status == 0
             except Exception as e:
