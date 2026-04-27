@@ -11,3 +11,5 @@ tenacity==9.0.0
 asyncpg==0.30.0
 netmiko==4.6.0
 netmikro==0.1.0
+pycryptodome
+cryptography
