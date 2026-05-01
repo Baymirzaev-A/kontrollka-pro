@@ -302,125 +302,65 @@
             }
         }
 
-    // Новая функция для выполнения команды на устройствах
+    // Новая функция для выполнения команды на устройствах (через Celery)
     async function executeCommandOnDevices(command, deviceIds) {
-        const BATCH_SIZE = 20;
-        const MAX_DEVICES_PER_REQUEST = 40;
+        // Запускаем Celery задачу через API
+        appendToGroupOutput(`🚀 Запуск параллельного выполнения на ${deviceIds.length} устройствах...`);
 
-        // Проверка лимита
-        if (deviceIds.length > MAX_DEVICES_PER_REQUEST) {
-            const confirmMsg = `⚠️ Вы выбрали ${deviceIds.length} устройств.\n` +
-                               `Максимум за один раз можно выполнить команду на ${MAX_DEVICES_PER_REQUEST} устройствах.\n\n` +
-                               `Будет выполнено на первых ${MAX_DEVICES_PER_REQUEST} устройствах. Продолжить?`;
+        const response = await fetch('/api/group/execute', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                command: command,
+                device_ids: deviceIds
+            })
+        });
 
-            if (!confirm(confirmMsg)) {
-                appendToGroupOutput(`❌ Выполнение отменено (превышен лимит)`, true);
-                return;
-            }
-
-            deviceIds = deviceIds.slice(0, MAX_DEVICES_PER_REQUEST);
-            appendToGroupOutput(`⚠️ Выполняется на первых ${deviceIds.length} устройствах`);
+        if (response.status === 429) {
+            const data = await response.json();
+            alert('⚠️ ' + data.message);
+            return;
         }
 
-        // Разбиваем на пакеты
-        const batches = [];
-        for (let i = 0; i < deviceIds.length; i += BATCH_SIZE) {
-            batches.push(deviceIds.slice(i, i + BATCH_SIZE));
+        const data = await response.json();
+
+        if (!data.success) {
+            appendToGroupOutput(`❌ Ошибка: ${data.error}`, true);
+            return;
         }
 
-        const totalBatches = batches.length;
-        let allResults = [];
-        let processedDevices = 0;
+        const taskId = data.task_id;
+        appendToGroupOutput(`📋 ID задачи: ${taskId}`);
+        appendToGroupOutput(`🔄 Ожидание выполнения на ${data.devices_count} устройствах...`);
 
-        window.tempResults = [];
-        document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">⏳ Выполняется команда на устройствах...</div>';
-        document.getElementById('downloadTopContainer').style.display = 'none';
+        // Показываем прогресс
+        showProgress(0, deviceIds.length, { currentBatch: 1, totalBatches: 1 });
 
-        showProgress(0, deviceIds.length, { currentBatch: 0, totalBatches: totalBatches });
+        // Интервал опроса статуса
+        const interval = setInterval(async () => {
+            try {
+                const statusResponse = await fetch(`/api/task/${taskId}/status`);
+                const statusData = await statusResponse.json();
 
-        try {
-            for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-                const batch = batches[batchIndex];
-                const batchNumber = batchIndex + 1;
-
-                appendToGroupOutput(`📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств)...`);
-
-                const progressText = document.getElementById('progressText');
-                if (progressText) {
-                    progressText.innerHTML = `📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств) - выполняется...`;
-                }
-
-                const response = await fetch('/api/group/execute', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        command: command,
-                        device_ids: batch
-                    })
-                });
-
-                 if (response.status === 429) {
-                    const data = await response.json();
-                    alert('⚠️ ' + data.message);
-                    return;
-                }
-
-                const data = await response.json();
-
-                if (data.error && data.limit) {
-                    appendToGroupOutput(`❌ ${data.error}`, true);
-                    alert(`❌ ${data.error}`);
+                if (statusData.status === 'completed') {
+                    clearInterval(interval);
                     hideProgress();
                     hideLoading();
-                    return;
+
+                    const result = statusData.result;
+                    appendToGroupOutput(`✅ Выполнение завершено. Успешно: ${result.success}, Ошибок: ${result.failed}`);
+                    displayResults(result.results, command);
+
+                } else if (statusData.status === 'failed') {
+                    clearInterval(interval);
+                    hideProgress();
+                    hideLoading();
+                    appendToGroupOutput(`❌ Выполнение не удалось: ${statusData.error}`, true);
                 }
-
-                if (data.results) {
-                    allResults = allResults.concat(data.results);
-                    window.tempResults = allResults;
-
-                    const successCount = allResults.filter(r => r.success).length;
-                    const errorCount = allResults.filter(r => !r.success).length;
-                    const statsText = document.getElementById('progressStats');
-                    if (statsText) {
-                        statsText.textContent = `✅ Успешно: ${successCount} | ❌ Ошибок: ${errorCount}`;
-                    }
-                    appendToGroupOutput(`✅ Пакет ${batchNumber} завершён. Успешно: ${successCount}, Ошибок: ${errorCount}`);
-                }
-
-                processedDevices += batch.length;
-                showProgress(processedDevices, deviceIds.length, {
-                    currentBatch: batchNumber,
-                    totalBatches: totalBatches
-                });
-
-                if (batchIndex < batches.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
+            } catch (error) {
+                console.error('Status check error:', error);
             }
-
-            hideLoading();
-            hideProgress();
-
-            if (allResults.length === 0) {
-                document.getElementById('resultsContainer').innerHTML =
-                    '<div class="alert alert-warning">Нет результатов</div>';
-                appendToGroupOutput(`⚠️ Нет результатов выполнения`, true);
-                return;
-            }
-
-            appendToGroupOutput(`✅ Выполнение завершено. Всего обработано: ${allResults.length} устройств`);
-            displayResults(allResults, command);
-
-        } catch (error) {
-            hideLoading();
-            hideProgress();
-            appendToGroupOutput(`❌ Ошибка соединения: ${error}`, true);
-            document.getElementById('resultsContainer').innerHTML =
-                `<div class="alert alert-danger">Ошибка соединения: ${error}</div>`;
-        } finally {
-            window.tempResults = null;
-        }
+        }, 2000);
     }
 
     function displayResults(results, command) {

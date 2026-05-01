@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from models.user import UserModel
 from auth import authenticate, AUTH_MODE
+from celery_app import execute_group_command_parallel
 
 print("=== DEBUG ===")
 print(f"AUTH_MODE = {os.environ.get('AUTH_MODE')}")
@@ -923,86 +924,60 @@ def execute_command(device_id):
 @login_required
 @limiter.limit("5 per minute")
 def execute_group_command():
-    """Выполнение команды на нескольких выбранных устройствах"""
+    """Выполнение команды на нескольких выбранных устройствах (параллельно через Celery)"""
     data = request.json
     command = data.get('command')
     device_ids = data.get('device_ids', [])
 
     if not command:
         return jsonify({'error': 'Команда не указана'}), 400
-        # ===== ПРОВЕРКА НА ОПАСНЫЕ КОМАНДЫ =====
+
+    # ===== ПРОВЕРКА НА ОПАСНЫЕ КОМАНДЫ =====
     if is_dangerous_command(command):
         return jsonify({
             'error': '❌ Эта команда запрещена в консоли. Используйте скрипты для изменения конфигурации.',
             'command': command
         }), 403
+
     if not device_ids:
         return jsonify({'error': 'Не выбрано ни одного устройства'}), 400
 
-    # ===== ПРОВЕРКА ЛИМИТА =====
     if len(device_ids) > MAX_DEVICES_PER_GROUP:
         return jsonify({
-            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP} за раз. Выбрано: {len(device_ids)}',
+            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP} за раз.',
             'limit': MAX_DEVICES_PER_GROUP,
             'selected': len(device_ids)
         }), 400
 
-    results = []
-    total = len(device_ids)
+    # Получаем параметры подключения для каждого устройства
+    devices_info = []
+    valid_device_ids = []
 
-    for idx, device_id in enumerate(device_ids):
+    for device_id in device_ids:
         device = db.get_device(device_id)
-        if not device:
-            results.append({
-                'device_id': device_id,
-                'device_name': 'Неизвестно',
-                'success': False,
-                'error': 'Устройство не найдено'
-            })
-            continue
+        if device:
+            valid_device_ids.append(device_id)
+            devices_info.append(get_device_params(device))
 
-        device_params = get_device_params(device)
+    if not valid_device_ids:
+        return jsonify({'error': 'Нет доступных устройств'}), 400
 
-        connection = None
-        try:
-            logger.info(f"Групповая задача [{idx + 1}/{total}]: подключение к {device['host']}")
-            connection = ConnectHandler(**device_params)
-            output = execute_long_command(connection, command)
+    # Запускаем параллельное выполнение через Celery
+    username = session.get('username', 'unknown')
+    task_id = execute_group_command_parallel(
+        valid_device_ids,
+        command,
+        username,
+        devices_info
+    )
 
-            username = session.get('username', 'unknown')
-            db.save_command_history(device_id, command, output, username)
-
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': True,
-                'output': output
-            })
-
-        except Exception as e:
-            logger.error(f"Ошибка для устройства {device['name']}: {str(e)}")
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': False,
-                'error': str(e)
-            })
-        finally:
-            if connection:
-                connection.disconnect()
-
-        # Небольшая задержка между подключениями
-        if idx < total - 1:
-            time.sleep(0.1)
+    logger.info(f"Group command task created: {task_id}, devices: {len(valid_device_ids)}")
 
     return jsonify({
         'success': True,
-        'results': results,
-        'summary': {
-            'total': total,
-            'success': len([r for r in results if r['success']]),
-            'failed': len([r for r in results if not r['success']])
-        }
+        'task_id': task_id,
+        'message': f'Запущено параллельное выполнение на {len(valid_device_ids)} устройствах',
+        'devices_count': len(valid_device_ids)
     })
 
 # ==== API ДЛЯ СКРИПТОВ =====
@@ -1875,6 +1850,31 @@ def inject_daria_url():
     return {
         'daria_api_url': os.getenv('DARIA_API_URL', 'http://daria-api:8000')
     }
+
+
+@app.route('/api/task/<task_id>/status', methods=['GET'])
+@login_required
+def task_status(task_id):
+    from celery import current_app
+    task = current_app.AsyncResult(task_id)
+
+    if task.ready():
+        if task.successful():
+            result = task.result
+            return jsonify({
+                'status': 'completed',
+                'result': result
+            })
+        else:
+            return jsonify({
+                'status': 'failed',
+                'error': str(task.info)
+            })
+    else:
+        return jsonify({
+            'status': 'pending',
+            'task_id': task_id
+        })
 
 if __name__ == '__main__':
     cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')

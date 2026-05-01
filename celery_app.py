@@ -5,7 +5,7 @@ import json
 import subprocess
 import tempfile
 import yaml
-
+from celery import group, chord
 import logging
 
 # Настройка логирования
@@ -219,3 +219,80 @@ def run_playbook_task(self, task_data):
             if path and os.path.exists(path):
                 os.unlink(path)
                 logger.debug(f"Task {task_id}: Removed temp file {path}")
+
+
+# ===== CELERY CANVAS: ПАРАЛЛЕЛЬНОЕ ВЫПОЛНЕНИЕ КОМАНД =====
+
+@app.task(bind=True, max_retries=2, soft_time_limit=120, time_limit=150)
+def execute_device_command_task(self, device_id: int, command: str, username: str, device_params: dict):
+    """
+    Выполнить команду на одном устройстве через Netmiko
+    Запускается параллельно для каждого устройства (group)
+    """
+    from netmiko import ConnectHandler
+
+    logger.info(f"Task {self.request.id}: Executing on device {device_id}")
+
+    try:
+        connection = ConnectHandler(**device_params)
+        output = connection.send_command(command, read_timeout=60)
+        connection.disconnect()
+
+        # Сохраняем в историю (опционально, можно через API)
+        # _save_command_history(device_id, command, output, username)
+
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': True,
+            'output': output
+        }
+    except Exception as e:
+        logger.error(f"Task {self.request.id}: Failed on device {device_id} - {e}")
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': False,
+            'error': str(e)
+        }
+
+
+@app.task
+def notify_completion(results, command: str, username: str):
+    """
+    Callback после выполнения всех команд (chord)
+    """
+    total = len(results)
+    success_count = sum(1 for r in results if r['success'])
+    error_count = total - success_count
+
+    logger.info(f"✅ Команда '{command}' выполнена: успешно={success_count}, ошибок={error_count}")
+
+    # TODO: Отправить WebSocket уведомление через Redis
+    # r = redis.Redis(host='redis', port=6379)
+    # r.publish('group_command_complete', json.dumps({'total': total, 'success': success_count}))
+
+    return {
+        'total': total,
+        'success': success_count,
+        'failed': error_count,
+        'results': results
+    }
+
+
+def execute_group_command_parallel(device_ids: list, command: str, username: str, devices_info: list):
+    """
+    Параллельное выполнение команды на группе устройств
+    devices_info: список словарей с параметрами подключения для каждого устройства
+    """
+    # Создаём группу задач (все запускаются параллельно)
+    tasks = [
+        execute_device_command_task.s(device_id, command, username, device_params)
+        for device_id, device_params in zip(device_ids, devices_info)
+    ]
+
+    # chord = group + callback (выполняется после завершения всех)
+    callback = notify_completion.s(command, username)
+    result = chord(tasks)(callback)
+
+    return result.id
