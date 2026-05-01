@@ -218,6 +218,15 @@ class DiscoveryEngine:
         # 👇 Используем snmp_version для аутентификации
         auth = await self._create_snmp_auth(device, snmp_version)
 
+        config = await self._get_config(ip, auth, device.get("device_type", ""))
+
+        # НЕ СОХРАНЯЕМ ЕСЛИ КОНФИГ ПУСТОЙ ИЛИ МЕНЬШЕ 100 СИМВОЛОВ
+        if not config or len(config) < 100:
+            logger.warning(f"Config for {ip} is empty or too short (len={len(config)}), skipping save")
+            return
+
+        current_time = datetime.now()
+
         data = {
             "ip": ip,
             "name": device["name"],
@@ -229,8 +238,8 @@ class DiscoveryEngine:
             "contact": await self._get_contact(ip, auth),
             "interfaces": await self._get_interfaces(ip, auth),
             "neighbors": await self._get_neighbors(ip, auth),
-            "config": await self._get_config(ip, auth, device.get("device_type", "")),
-            "last_collected": datetime.now()
+            "config": config,
+            "last_collected": current_time
         }
 
         logger.info(f"Final config for {ip}: length={len(data['config'])}")
