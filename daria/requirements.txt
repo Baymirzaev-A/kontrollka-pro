@@ -13,3 +13,6 @@ netmiko==4.6.0
 netmikro==0.1.0
 pycryptodome
 cryptography
+gunicorn>=21.2.0
+uvicorn[standard]>=0.24.0
+#pyOpenSSL>=24.0.0

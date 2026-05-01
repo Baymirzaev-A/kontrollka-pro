@@ -9,6 +9,7 @@ import io
 import re
 import json
 import os
+import redis
 from functools import wraps
 from datetime import datetime
 from database import DeviceDB
@@ -34,49 +35,6 @@ app = Flask(__name__)
 
 from ansible_routes import ansible_bp
 app.register_blueprint(ansible_bp)
-
-
-# ===== КЕШ СТАТУСОВ =====
-status_cache = {
-    'data': {},
-    'last_check': 0,
-    'ttl': 20  # проверка раз в 20 секунд
-}
-
-
-def get_cached_statuses(force=False):
-    """Получает статусы устройств из кеша"""
-    global status_cache
-    now = time.time()
-
-    if force or (now - status_cache['last_check']) >= status_cache['ttl']:
-        devices = get_cached_devices()
-        if devices:
-            status_cache['data'] = check_devices_status(devices)
-            status_cache['last_check'] = now
-            online = sum(1 for s in status_cache['data'].values() if s)
-        else:
-            status_cache['data'] = {}
-
-    return status_cache['data']
-
-
-# ===== ФОНОВАЯ ПРОВЕРКА СТАТУСОВ =====
-def background_status_check():
-    """Фоновая проверка статусов устройств (раз в минуту)"""
-    while True:
-        time.sleep(status_cache['ttl'])  # используем TTL из кеша
-        try:
-            # Принудительно обновляем кеш
-            get_cached_statuses(force=True)
-            # Отправляем статусы всем подключенным клиентам
-            socketio.emit('status_update', status_cache['data'])
-        except Exception as e:
-            logger.error(f"Ошибка в фоновой проверке статусов: {e}")
-
-# Запускаем фоновый поток
-status_thread = threading.Thread(target=background_status_check, daemon=True)
-status_thread.start()
 
 # ===== БЕЗОПАСНЫЙ SECRET_KEY =====
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -265,6 +223,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ===== КЕШ СТАТУСОВ В REDIS =====
+# Подключение к Redis (один раз при старте)
+redis_client = redis.Redis(
+    host='redis',
+    port=6379,
+    decode_responses=True
+)
+
+# Проверяем подключение к Redis
+try:
+    redis_client.ping()
+    logger.info("✅ Redis подключен для кеширования статусов")
+except Exception as e:
+    logger.error(f"❌ Ошибка подключения к Redis: {e}")
+
+def get_cached_statuses(force=False):
+    """Получает статусы устройств из Redis кеша"""
+    cache_key = "device_statuses"
+
+    # Если не принудительное обновление - пробуем взять из кеша
+    if not force:
+        cached = redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+    # Обновляем кеш - проверяем все устройства
+    devices = get_cached_devices()
+    if devices:
+        statuses = check_devices_status(devices)
+        # Сохраняем в Redis на 20 секунд
+        redis_client.setex(cache_key, 20, json.dumps(statuses))
+        return statuses
+
+    return {}
+
+# ===== ФОНОВАЯ ПРОВЕРКА СТАТУСОВ =====
+def background_status_check():
+    """Фоновая проверка статусов устройств (раз в 20 секунд)"""
+    while True:
+        time.sleep(20)
+        try:
+            # Принудительно обновляем кеш в Redis
+            statuses = get_cached_statuses(force=True)
+            # Отправляем статусы всем подключенным клиентам
+            socketio.emit('status_update', statuses)
+        except Exception as e:
+            logger.error(f"Ошибка в фоновой проверке статусов: {e}")
+
+# Запускаем фоновый поток
+status_thread = threading.Thread(target=background_status_check, daemon=True)
+status_thread.start()
+
 from flask_socketio import SocketIO, emit
 
 # Настройка SocketIO с поддержкой Redis (если указан)
@@ -274,7 +284,8 @@ if redis_url:
         app,
         cors_allowed_origins="*",
         manage_session=False,
-        message_queue=redis_url
+        message_queue=redis_url,
+        async_mode='eventlet'
     )
     logger.info(f"✅ SocketIO настроен с Redis: {redis_url}")
 else:

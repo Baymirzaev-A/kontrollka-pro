@@ -79,7 +79,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --ssl-keyfile=/certs/key.pem --ssl-certfile=/certs/cert.pem
+    command: gunicorn -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --certfile=/certs/cert.pem --keyfile=/certs/key.pem app.main:app
+# ⚙️ МАСШТАБИРОВАНИЕ DARIA API:
+# - 1 воркер = минимальная нагрузка (тест)
+# - 4 воркера = 2 ядра CPU (рекомендуется)
+# - 6 воркеров = 4 ядра CPU
+# - 8 воркеров = 8+ ядер CPU
+# Формула: workers = (2 × количество ядер) или чуть больше для пиков
+
 
   tftp:
     image: pghalliday/tftp:latest

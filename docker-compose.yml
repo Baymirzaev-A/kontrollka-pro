@@ -41,7 +41,8 @@ services:
     restart: always
     ports:
       - "5000:5000"
-    #Добавляем порты, если нужно несколько воркеров, например "5001:5001"
+    #expose:
+    #  - "5000"                 после разворачивания nginx
     environment:
       # Основные
       - DARIA_API_URL=https://127.0.0.1:8000
@@ -74,6 +75,8 @@ services:
 
       # Gunicorn
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+      - GUNICORN_WORKER_CLASS=${GUNICORN_WORKER_CLASS:-eventlet}
+
 
     volumes:
       - ./data:/app/data
@@ -87,6 +90,10 @@ services:
         condition: service_healthy
     networks:
       - kontrollka_network
+  # РАСКОММЕНТИРОВАТЬ ДЛЯ МАСШТАБИРОВАНИЯ (будет 3 реплики)
+  # deploy:
+  #   mode: replicated
+  #   replicas: 3
 
   celery-worker:
     build:
@@ -109,6 +116,22 @@ services:
         condition: service_healthy
     networks:
       - kontrollka_network
+
+  #nginx:
+    #image: nginx:alpine
+   # container_name: kontrollka_nginx
+   # restart: always
+   # ports:
+    #  - "80:80"
+     # - "443:443"
+    #volumes:
+     # - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # - ./certs:/certs:ro
+    #networks:
+    #  - kontrollka_network
+    #depends_on:
+    #  - kontrollka
+
 volumes:
   postgres_data:
   redis_data:
