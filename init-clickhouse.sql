@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS kontrollka_metrics.device_snapshots (
     interfaces_count UInt32,
     last_collected DateTime
 ) ENGINE = MergeTree()
-ORDER BY last_collected;
+PARTITION BY toYYYYMM(last_collected)      -- ← партиции по месяцам
+ORDER BY (ip, last_collected);             -- ← порядок сортировки (сначала ip, потом время)
 
 -- Таблица для истории интерфейсов (с добавленными колонками для ошибок)
 CREATE TABLE IF NOT EXISTS kontrollka_metrics.interface_history (
@@ -31,4 +32,5 @@ CREATE TABLE IF NOT EXISTS kontrollka_metrics.interface_history (
     out_discards UInt32 DEFAULT 0,
     collected_at DateTime
 ) ENGINE = MergeTree()
-ORDER BY collected_at;
+PARTITION BY toYYYYMM(collected_at)        -- ← партиции по месяцам
+ORDER BY (device_ip, collected_at);

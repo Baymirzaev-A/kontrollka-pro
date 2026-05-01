@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -38,6 +38,15 @@ class Device(Base):
     group = Column(String, nullable=True)  # для Ansible
     site = Column(String, nullable=True)  # площадка (DC1, DC2, Office и т.д.)
 
+    # Индексы
+    __table_args__ = (
+        Index('idx_devices_host', 'host'),
+        Index('idx_devices_device_type', 'device_type'),
+        Index('idx_devices_purpose', 'purpose'),
+        Index('idx_devices_name', 'name'),
+        Index('idx_devices_group', 'group'),
+    )
+
 class Config(Base):
     __tablename__ = 'configs'
 
@@ -49,6 +58,11 @@ class Config(Base):
 
     device = relationship('Device', back_populates='configs')
 
+    # Индексы
+    __table_args__ = (
+        Index('idx_configs_device_id', 'device_id'),
+        Index('idx_configs_saved_at', 'saved_at'),
+    )
 
 class CommandHistory(Base):
     __tablename__ = 'command_history'
@@ -61,6 +75,14 @@ class CommandHistory(Base):
     executed_by = Column(String, nullable=True)
 
     device = relationship('Device', back_populates='commands')
+
+    # Индексы
+    __table_args__ = (
+        Index('idx_command_history_device_id', 'device_id'),
+        Index('idx_command_history_executed_at', 'executed_at'),
+        Index('idx_command_history_executed_by', 'executed_by'),
+    )
+
 
 class AnsibleHistory(Base):
     __tablename__ = 'ansible_history'

@@ -231,6 +231,18 @@ redis_client = redis.Redis(
     decode_responses=True
 )
 
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+# Rate Limiter с хранением в Redis
+limiter = Limiter(
+    app,
+    key_func=get_remote_address,           # ключ = IP пользователя
+    default_limits=["200 per minute", "10 per second"],
+    storage_uri=os.getenv('REDIS_URL', 'redis://redis:6379'),
+    strategy="fixed-window"                # простое окно
+)
+
 # Проверяем подключение к Redis
 try:
     redis_client.ping()
@@ -909,6 +921,7 @@ def execute_command(device_id):
 
 @app.route('/api/group/execute', methods=['POST'])
 @login_required
+@limiter.limit("5 per minute")
 def execute_group_command():
     """Выполнение команды на нескольких выбранных устройствах"""
     data = request.json
@@ -1831,6 +1844,7 @@ def api_audit_commands():
 
 @app.route('/api/device/<int:device_id>/rediscover', methods=['POST'])
 @login_required
+@limiter.limit("10 per minute")
 def api_rediscover_device(device_id):
     """Принудительный сбор данных по устройству"""
     import requests

@@ -242,6 +242,12 @@
                     body: JSON.stringify({ device_ids: selectedDevices.map(id => parseInt(id)) })
                 });
 
+                if (statusResponse.status === 429) {
+                    const data = await statusResponse.json();
+                    alert('⚠️ ' + data.message);
+                    return;
+                }
+
                 const statusData = await statusResponse.json();
 
                 if (statusData.success) {
@@ -352,6 +358,12 @@
                         device_ids: batch
                     })
                 });
+
+                 if (response.status === 429) {
+                    const data = await response.json();
+                    alert('⚠️ ' + data.message);
+                    return;
+                }
 
                 const data = await response.json();
 
