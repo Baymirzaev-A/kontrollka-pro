@@ -153,7 +153,7 @@ class DiscoveryEngine:
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
-            from pysnmp.smi.rfc1902 import ObjectIdentifier
+            from pysnmp.proto.rfc1902 import ObjectIdentifier
 
             # OID для всех вендоров одинаковы
             AUTH_PROTOCOLS = {
