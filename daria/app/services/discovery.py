@@ -5,7 +5,7 @@ import logging
 import json
 from datetime import datetime
 from typing import List, Dict, Optional
-from pysnmp.smi import builder, view
+#from pysnmp.smi import builder, view
 from app.core.db import get_neo4j_driver, get_clickhouse_client
 from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd, set_cmd, next_cmd,
@@ -17,18 +17,6 @@ from pysnmp.hlapi.v3arch.asyncio import (
 from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 from pysnmp.proto.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
-
-# Загружаем MIB с протоколами аутентификации
-#from pysnmp.smi import builder
-
-#auth_mib_builder = builder.MibBuilder()
-#auth_mib_builder.loadModules('SNMPv2-SMI', 'SNMP-USER-BASED-SM-MIB')
-#auth_mib_builder.loadModules()
-
-# MIB билдер для определения вендоров
-#mib_builder = builder.MibBuilder()
-#mib_builder.loadModules('SNMPv2-MIB', 'SNMPv2-SMI')
-#mib_view = view.MibViewController(mib_builder)
 
 CONFIG_MIBS = {
     # Cisco
