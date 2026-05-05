@@ -5,7 +5,6 @@ import logging
 import json
 from datetime import datetime
 from typing import List, Dict, Optional
-#from pysnmp.smi import builder, view
 from app.core.db import get_neo4j_driver, get_clickhouse_client
 from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd, set_cmd, next_cmd,
@@ -141,36 +140,11 @@ class DiscoveryEngine:
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
-
-            AUTH_PROTOCOLS = {
-                'SHA': usmHMACSHAAuthProtocol,
-                'MD5': usmHMACMD5AuthProtocol,
-            }
-
-            PRIV_PROTOCOLS = {
-                'AES': usmAesCfb128Protocol,
-                'DES': usmDESPrivProtocol,
-            }
-
-            auth_name = os.getenv("SNMP_V3_AUTH_PROTOCOL", "SHA").upper()
-            priv_name = os.getenv("SNMP_V3_PRIV_PROTOCOL", "AES").upper()
-
-            auth_proto = AUTH_PROTOCOLS.get(auth_name, usmHMACSHAAuthProtocol)
-            priv_proto = PRIV_PROTOCOLS.get(priv_name, usmAesCfb128Protocol)
-
-            logger.info("=" * 50)
-            logger.info(f"Creating SNMPv3 auth for {device.get('host')}")
-            logger.info(f"auth_proto: {auth_proto}")
-            logger.info(f"auth_proto type: {type(auth_proto)}")
-            logger.info(f"priv_proto: {priv_proto}")
-            logger.info(f"priv_proto type: {type(priv_proto)}")
-            logger.info("=" * 50)
-
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
-                auth_proto,
+                usmHMACSHAAuthProtocol,  # Передаем класс напрямую [citation:6]
                 os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                priv_proto,
+                usmAesCfb128Protocol,  # Передаем класс напрямую [citation:6]
                 os.getenv("SNMP_V3_PRIV_PASSWORD", "")
             )
         else:
