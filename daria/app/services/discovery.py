@@ -6,14 +6,14 @@ import json
 from datetime import datetime
 from typing import List, Dict, Optional
 from app.core.db import get_neo4j_driver, get_clickhouse_client
-from pysnmp.hlapi.v3arch.asyncio import (
+from pysnmp.hlapi.asyncio import (
     get_cmd, set_cmd, next_cmd,
     CommunityData, UsmUserData,
     usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol, usmDESPrivProtocol,
     ObjectType, ObjectIdentity, ContextData, SnmpEngine
 )
-from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
+from pysnmp.hlapi.asyncio.transport import UdpTransportTarget
 from pysnmp.proto.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
 
