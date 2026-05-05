@@ -153,32 +153,29 @@ class DiscoveryEngine:
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
-            from pysnmp.proto.rfc1902 import ObjectIdentifier
 
-            # OID для всех вендоров одинаковы
             AUTH_PROTOCOLS = {
-                'SHA': ObjectIdentifier('1.3.6.1.6.3.10.1.2.2'),  # SHA-96
-                'MD5': ObjectIdentifier('1.3.6.1.6.3.10.1.2.1'),  # MD5-96
+                'SHA': usmHMACSHAAuthProtocol,
+                'MD5': usmHMACMD5AuthProtocol,
             }
 
             PRIV_PROTOCOLS = {
-                'AES': ObjectIdentifier('1.3.6.1.6.3.10.1.2.4'),  # AES-128
-                'DES': ObjectIdentifier('1.3.6.1.6.3.10.1.2.3'),  # DES-56
+                'AES': usmAesCfb128Protocol,
+                'DES': usmDESPrivProtocol,
             }
 
             auth_name = os.getenv("SNMP_V3_AUTH_PROTOCOL", "SHA").upper()
             priv_name = os.getenv("SNMP_V3_PRIV_PROTOCOL", "AES").upper()
 
-            auth_oid = AUTH_PROTOCOLS.get(auth_name, AUTH_PROTOCOLS['SHA'])
-            priv_oid = PRIV_PROTOCOLS.get(priv_name, PRIV_PROTOCOLS['AES'])
+            auth_protocol = AUTH_PROTOCOLS.get(auth_name, usmHMACSHAAuthProtocol)
+            priv_protocol = PRIV_PROTOCOLS.get(priv_name, usmAesCfb128Protocol)
 
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
-                auth_oid,  # OID, а не имя протокола
+                auth_protocol,
                 os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                priv_oid,  # OID, а не имя протокола
-                os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
-                os.getenv("SNMP_V3_USER", "daria")
+                priv_protocol,
+                os.getenv("SNMP_V3_PRIV_PASSWORD", "")
             )
         else:
             mpModel = 1 if snmp_version == "v2c" else 0
