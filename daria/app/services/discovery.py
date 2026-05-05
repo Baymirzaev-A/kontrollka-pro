@@ -146,25 +146,15 @@ class DiscoveryEngine:
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
-            auth_proto = None
-            priv_proto = None
-
-            if os.getenv("SNMP_V3_AUTH_PROTOCOL") == "SHA":
-                auth_proto = usmHMACSHAAuthProtocol
-            else:
-                auth_proto = usmHMACMD5AuthProtocol
-
-            if os.getenv("SNMP_V3_PRIV_PROTOCOL") == "AES":
-                priv_proto = usmAesCfb128Protocol
-            else:
-                priv_proto = usmDESPrivProtocol
-
             return UsmUserData(
-                securityName=os.getenv("SNMP_V3_USER", "daria"),
-                authProtocol=auth_proto,
-                authKey=os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                privProtocol=priv_proto,
-                privKey=os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                os.getenv("SNMP_V3_USER", "daria"),  # securityName
+                usmHMACSHAAuthProtocol if os.getenv("SNMP_V3_AUTH_PROTOCOL") == "SHA" else usmHMACMD5AuthProtocol,
+                # authProtocol
+                os.getenv("SNMP_V3_AUTH_PASSWORD", ""),  # authKey
+                usmAesCfb128Protocol if os.getenv("SNMP_V3_PRIV_PROTOCOL") == "AES" else usmDESPrivProtocol,
+                # privProtocol
+                os.getenv("SNMP_V3_PRIV_PASSWORD", ""),  # privKey
+                os.getenv("SNMP_V3_USER", "daria")  # userName (обязательный!)
             )
         else:
             mpModel = 1 if snmp_version == "v2c" else 0
