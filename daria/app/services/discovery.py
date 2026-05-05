@@ -140,11 +140,14 @@ class DiscoveryEngine:
 
     async def _create_snmp_auth(self, device: dict, snmp_version: str):
         if snmp_version == "v3":
+            auth_proto = usmHMACSHAAuthProtocol()
+            priv_proto = usmAesCfb128Protocol()
+
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
-                '1.3.6.1.6.3.10.1.1.3',  # usmHMACSHAAuthProtocol
+                auth_proto,
                 os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                '1.3.6.1.6.3.10.1.2.4',  # usmAesCfb128Protocol
+                priv_proto,
                 os.getenv("SNMP_V3_PRIV_PASSWORD", "")
             )
         else:
