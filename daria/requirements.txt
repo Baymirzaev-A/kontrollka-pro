@@ -15,4 +15,6 @@ pycryptodome
 cryptography
 gunicorn>=21.2.0
 uvicorn[standard]>=0.24.0
+pycryptodome>=3.20.0
+cryptography>=42.0.0
 #pyOpenSSL>=24.0.0
