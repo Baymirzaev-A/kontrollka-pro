@@ -19,16 +19,16 @@ from pysnmp.proto.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
 
 # Загружаем MIB с протоколами аутентификации
-from pysnmp.smi import builder
+#from pysnmp.smi import builder
 
-auth_mib_builder = builder.MibBuilder()
-auth_mib_builder.loadModules('SNMPv2-SMI', 'SNMP-USER-BASED-SM-MIB')
-auth_mib_builder.loadModules()
+#auth_mib_builder = builder.MibBuilder()
+#auth_mib_builder.loadModules('SNMPv2-SMI', 'SNMP-USER-BASED-SM-MIB')
+#auth_mib_builder.loadModules()
 
 # MIB билдер для определения вендоров
-mib_builder = builder.MibBuilder()
-mib_builder.loadModules('SNMPv2-MIB', 'SNMPv2-SMI')
-mib_view = view.MibViewController(mib_builder)
+#mib_builder = builder.MibBuilder()
+#mib_builder.loadModules('SNMPv2-MIB', 'SNMPv2-SMI')
+#mib_view = view.MibViewController(mib_builder)
 
 CONFIG_MIBS = {
     # Cisco
