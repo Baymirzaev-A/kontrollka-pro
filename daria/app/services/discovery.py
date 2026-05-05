@@ -167,14 +167,14 @@ class DiscoveryEngine:
             auth_name = os.getenv("SNMP_V3_AUTH_PROTOCOL", "SHA").upper()
             priv_name = os.getenv("SNMP_V3_PRIV_PROTOCOL", "AES").upper()
 
-            auth_protocol = AUTH_PROTOCOLS.get(auth_name, usmHMACSHAAuthProtocol)
-            priv_protocol = PRIV_PROTOCOLS.get(priv_name, usmAesCfb128Protocol)
+            auth_proto = AUTH_PROTOCOLS.get(auth_name, usmHMACSHAAuthProtocol)
+            priv_proto = PRIV_PROTOCOLS.get(priv_name, usmAesCfb128Protocol)
 
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
-                auth_protocol,
+                auth_proto,
                 os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                priv_protocol,
+                priv_proto,
                 os.getenv("SNMP_V3_PRIV_PASSWORD", "")
             )
         else:
