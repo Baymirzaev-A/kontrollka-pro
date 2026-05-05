@@ -240,8 +240,7 @@ limiter = Limiter(
     app,
     key_func=get_remote_address,           # ключ = IP пользователя
     default_limits=["200 per minute", "10 per second"],
-    storage_uri=os.getenv('REDIS_URL', 'redis://redis:6379'),
-    strategy="fixed-window"                # простое окно
+    storage_uri=os.getenv('REDIS_URL', 'redis://redis:6379')
 )
 
 # Проверяем подключение к Redis
