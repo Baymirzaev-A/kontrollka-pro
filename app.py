@@ -237,8 +237,7 @@ from flask_limiter.util import get_remote_address
 
 # Rate Limiter с хранением в Redis
 limiter = Limiter(
-    app,
-    key_func=get_remote_address,           # ключ = IP пользователя
+    app,          # ключ = IP пользователя
     default_limits=["200 per minute", "10 per second"],
     storage_uri=os.getenv('REDIS_URL', 'redis://redis:6379')
 )
