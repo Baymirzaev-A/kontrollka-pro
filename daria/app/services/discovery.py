@@ -170,6 +170,14 @@ class DiscoveryEngine:
             auth_proto = AUTH_PROTOCOLS.get(auth_name, usmHMACSHAAuthProtocol)
             priv_proto = PRIV_PROTOCOLS.get(priv_name, usmAesCfb128Protocol)
 
+            logger.info("=" * 50)
+            logger.info(f"Creating SNMPv3 auth for {device.get('host')}")
+            logger.info(f"auth_proto: {auth_proto}")
+            logger.info(f"auth_proto type: {type(auth_proto)}")
+            logger.info(f"priv_proto: {priv_proto}")
+            logger.info(f"priv_proto type: {type(priv_proto)}")
+            logger.info("=" * 50)
+
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
                 auth_proto,
@@ -553,6 +561,7 @@ class DiscoveryEngine:
     async def _snmp_set(self, ip: str, auth, oid: str, value) -> Optional[bool]:
         async with self.semaphore:
             try:
+                logger.info(f"SNMP SET to {ip}, auth type: {type(auth)}")
                 snmp_engine = SnmpEngine()
                 transport = await UdpTransportTarget.create((ip, 161))
 
