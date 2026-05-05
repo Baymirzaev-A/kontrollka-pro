@@ -18,6 +18,12 @@ from pysnmp.hlapi.v3arch.asyncio.transport import UdpTransportTarget
 from pysnmp.proto.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
 
+# Загружаем MIB с протоколами аутентификации
+auth_mib_builder = builder.MibBuilder()
+auth_mib_builder.loadModules('SNMPv2-SMI', 'SNMP-USER-BASED-SM-MIB')
+inst.registerMibBuilder(auth_mib_builder)
+auth_mib_builder.loadModules()  # принудительная загрузка
+
 # MIB билдер для определения вендоров
 mib_builder = builder.MibBuilder()
 mib_builder.loadModules('SNMPv2-MIB', 'SNMPv2-SMI')
