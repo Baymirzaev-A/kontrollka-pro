@@ -142,9 +142,9 @@ class DiscoveryEngine:
         if snmp_version == "v3":
             return UsmUserData(
                 os.getenv("SNMP_V3_USER", "daria"),
-                usmHMACSHAAuthProtocol,  # Передаем класс напрямую [citation:6]
+                '1.3.6.1.6.3.10.1.1.3',  # usmHMACSHAAuthProtocol
                 os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                usmAesCfb128Protocol,  # Передаем класс напрямую [citation:6]
+                '1.3.6.1.6.3.10.1.2.4',  # usmAesCfb128Protocol
                 os.getenv("SNMP_V3_PRIV_PASSWORD", "")
             )
         else:
