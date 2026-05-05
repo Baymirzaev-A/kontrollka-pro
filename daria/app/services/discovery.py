@@ -19,10 +19,11 @@ from pysnmp.proto.rfc1902 import Integer32, OctetString
 logger = logging.getLogger(__name__)
 
 # Загружаем MIB с протоколами аутентификации
+from pysnmp.smi import builder
+
 auth_mib_builder = builder.MibBuilder()
 auth_mib_builder.loadModules('SNMPv2-SMI', 'SNMP-USER-BASED-SM-MIB')
-inst.registerMibBuilder(auth_mib_builder)
-auth_mib_builder.loadModules()  # принудительная загрузка
+auth_mib_builder.loadModules()
 
 # MIB билдер для определения вендоров
 mib_builder = builder.MibBuilder()
