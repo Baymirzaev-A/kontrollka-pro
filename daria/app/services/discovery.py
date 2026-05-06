@@ -244,16 +244,25 @@ class DiscoveryEngine:
         if not if_number:
             return interfaces
 
+        async def get_int(oid: str, default: int = 0) -> int:
+            val = await self._snmp_get(ip, snmp_version, oid)
+            if not val or 'No Such' in val:
+                return default
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
         for i in range(1, int(if_number) + 1):
             iface = {
                 "index": i,
-                "name": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.2.{i}"),
-                "type": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.3.{i}"),
-                "speed": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.5.{i}"),
-                "in_errors": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.14.{i}") or 0),
-                "out_errors": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.20.{i}") or 0),
-                "in_discards": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.13.{i}") or 0),
-                "out_discards": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.19.{i}") or 0),
+                "name": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.2.{i}") or "unknown",
+                "type": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.3.{i}") or "unknown",
+                "speed": await get_int(f"1.3.6.1.2.1.2.2.1.5.{i}"),
+                "in_errors": await get_int(f"1.3.6.1.2.1.2.2.1.14.{i}"),
+                "out_errors": await get_int(f"1.3.6.1.2.1.2.2.1.20.{i}"),
+                "in_discards": await get_int(f"1.3.6.1.2.1.2.2.1.13.{i}"),
+                "out_discards": await get_int(f"1.3.6.1.2.1.2.2.1.19.{i}"),
             }
             interfaces.append(iface)
         return interfaces
