@@ -3,17 +3,11 @@ import os
 import asyncpg
 import logging
 import json
+import subprocess
 from datetime import datetime
 from typing import List, Dict, Optional
 from app.core.db import get_neo4j_driver, get_clickhouse_client
-from pysnmp.hlapi.asyncio import (
-    get_cmd, set_cmd, next_cmd,
-    CommunityData, UsmUserData,
-    usmHMACSHAAuthProtocol, usmHMACMD5AuthProtocol,
-    usmAesCfb128Protocol, usmDESPrivProtocol,
-    ObjectType, ObjectIdentity, ContextData, SnmpEngine, UdpTransportTarget
-)
-from pysnmp.proto.rfc1902 import Integer32, OctetString
+
 logger = logging.getLogger(__name__)
 
 CONFIG_MIBS = {
@@ -134,25 +128,8 @@ CONFIG_MIBS = {
 
 class DiscoveryEngine:
     def __init__(self):
-        self.snmp_engine = SnmpEngine()
         self.semaphore = asyncio.Semaphore(50)
-
-    async def _create_snmp_auth(self, device: dict, snmp_version: str):
-        if snmp_version == "v3":
-            auth_proto = (1, 3, 6, 1, 6, 3, 10, 1, 1, 3)  # usmHMACSHAAuthProtocol
-            priv_proto = (1, 3, 6, 1, 6, 3, 10, 1, 2, 4)  # usmAesCfb128Protocol
-
-            return UsmUserData(
-                os.getenv("SNMP_V3_USER", "daria"),
-                auth_proto,
-                os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                priv_proto,
-                os.getenv("SNMP_V3_PRIV_PASSWORD", "")
-            )
-        else:
-            mpModel = 1 if snmp_version == "v2c" else 0
-            community = os.getenv("SNMP_COMMUNITY", "public")
-            return CommunityData(community, mpModel=mpModel)
+        self.tasks = {}
 
     async def collect_all_devices(self):
         """Сбор данных по всем устройствам из PostgreSQL"""
@@ -199,11 +176,17 @@ class DiscoveryEngine:
     async def _collect_device_data(self, device, snmp_version: str = "v2c"):
         ip = device["host"]
 
-        # 👇 Используем snmp_version для аутентификации
-        auth = await self._create_snmp_auth(device, snmp_version)
+        # Получаем все данные через SNMP
+        firmware = await self._get_firmware(ip, snmp_version)
+        serial = await self._get_serial(ip, snmp_version)
+        vendor = await self._get_vendor(ip, snmp_version)
+        location = await self._get_location(ip, snmp_version)
+        contact = await self._get_contact(ip, snmp_version)
+        interfaces = await self._get_interfaces(ip, snmp_version)
+        neighbors = await self._get_neighbors(ip, snmp_version)
 
-        config = await self._get_config(ip, auth, device.get("device_type", ""))
-
+        # Конфиг через SNMP или SSH
+        config = await self._get_config(ip, snmp_version, device.get("device_type", ""))
         # НЕ СОХРАНЯЕМ ЕСЛИ КОНФИГ ПУСТОЙ ИЛИ МЕНЬШЕ 100 СИМВОЛОВ
         if not config or len(config) < 100:
             logger.warning(f"Config for {ip} is empty or too short (len={len(config)}), skipping save")
@@ -215,15 +198,15 @@ class DiscoveryEngine:
             "ip": ip,
             "name": device["name"],
             "device_type": device["device_type"],
-            "firmware": await self._get_firmware(ip, auth),
-            "serial": await self._get_serial(ip, auth),
-            "vendor": await self._get_vendor(ip, auth),
-            "location": await self._get_location(ip, auth),
-            "contact": await self._get_contact(ip, auth),
-            "interfaces": await self._get_interfaces(ip, auth),
-            "neighbors": await self._get_neighbors(ip, auth),
+            "firmware": firmware,
+            "serial": serial,
+            "vendor": vendor,
+            "location": location,
+            "contact": contact,
+            "interfaces": interfaces,
+            "neighbors": neighbors,
             "config": config,
-            "last_collected": current_time
+            "last_collected": datetime.now()
         }
 
         logger.info(f"Final config for {ip}: length={len(data['config'])}")
@@ -231,84 +214,77 @@ class DiscoveryEngine:
         await self._save_to_neo4j(data)
         await self._save_to_clickhouse(data)
 
-    async def _get_firmware(self, ip: str, auth) -> str:
+    async def _get_firmware(self, ip: str, snmp_version: str) -> str:
         """Версия прошивки через SNMP (sysDescr)"""
-        result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.1.0")
+        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.1.0")
         return result or "Unknown"
 
-    async def _get_serial(self, ip: str, auth) -> str:
+    async def _get_serial(self, ip: str, snmp_version: str) -> str:
         """Серийный номер через SNMP (entPhysicalSerialNum)"""
-        result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.47.1.1.1.1.11.1")
+        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.47.1.1.1.1.11.1")
         return result or "Unknown"
 
-    async def _get_vendor(self, ip: str, auth) -> str:
-        """Вендор через sysObjectID"""
-        sys_object_id = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.2.0")
+    async def _get_vendor(self, ip: str, snmp_version: str) -> str:
+        sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
         if sys_object_id:
             return self._vendor_from_oid(sys_object_id)
         return "Unknown"
 
-    async def _get_location(self, ip: str, auth) -> str:
-        """Локация устройства"""
-        result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.6.0")
+    async def _get_location(self, ip: str, snmp_version: str) -> str:
+        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.6.0")
         return result or ""
 
-    async def _get_contact(self, ip: str, auth) -> str:
-        """Контактное лицо"""
-        result = await self._snmp_get(ip, auth, "1.3.6.1.2.1.1.4.0")
+    async def _get_contact(self, ip: str, snmp_version: str) -> str:
+        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.4.0")
         return result or ""
 
-    async def _get_interfaces(self, ip: str, auth) -> List[Dict]:
-        """Список интерфейсов с ошибками"""
+    async def _get_interfaces(self, ip: str, snmp_version: str) -> List[Dict]:
         interfaces = []
-
-        if_number = await self._snmp_get(ip, auth, "1.3.6.1.2.1.2.1.0")
+        if_number = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.2.1.0")
         if not if_number:
             return interfaces
 
         for i in range(1, int(if_number) + 1):
             iface = {
                 "index": i,
-                "name": await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.2.{i}"),
-                "type": await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.3.{i}"),
-                "speed": await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.5.{i}"),
-                "in_errors": int(await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.14.{i}") or 0),  # ifInErrors
-                "out_errors": int(await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.20.{i}") or 0),  # ifOutErrors
-                "in_discards": int(await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.13.{i}") or 0),  # ifInDiscards
-                "out_discards": int(await self._snmp_get(ip, auth, f"1.3.6.1.2.1.2.2.1.19.{i}") or 0),  # ifOutDiscards
+                "name": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.2.{i}"),
+                "type": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.3.{i}"),
+                "speed": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.5.{i}"),
+                "in_errors": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.14.{i}") or 0),
+                "out_errors": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.20.{i}") or 0),
+                "in_discards": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.13.{i}") or 0),
+                "out_discards": int(await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.19.{i}") or 0),
             }
             interfaces.append(iface)
-
         return interfaces
 
-    async def _get_neighbors(self, ip: str, auth) -> List[Dict]:
+    async def _get_neighbors(self, ip: str, snmp_version: str) -> List[Dict]:
         """LLDP/CDP соседи"""
         neighbors = []
 
         # Пробуем CDP (Cisco)
-        cdp = await self._get_cdp_neighbors(ip, auth)
+        cdp = await self._get_cdp_neighbors(ip, snmp_version)
         if cdp:
             return cdp
 
         # Пробуем LLDP
-        lldp = await self._get_lldp_neighbors(ip, auth)
+        lldp = await self._get_lldp_neighbors(ip, snmp_version)
         if lldp:
             return lldp
 
         return neighbors
 
-    async def _get_cdp_neighbors(self, ip: str, auth) -> List[Dict]:
-        """CDP соседи"""
+    async def _get_cdp_neighbors(self, ip: str, snmp_version: str) -> List[Dict]:
         neighbors = []
         base_oid = "1.3.6.1.4.1.9.9.23.1.2.1.1"
 
         for index in range(1, 100):
-            device_id = await self._snmp_get(ip, auth, f"{base_oid}.6.{index}")
+            device_id = await self._snmp_get(ip, snmp_version, f"{base_oid}.6.{index}")
             if not device_id:
                 break
 
-            local_port = await self._snmp_get(ip, auth, f"{base_oid}.7.{index}")
-            platform = await self._snmp_get(ip, auth, f"{base_oid}.8.{index}")
+            local_port = await self._snmp_get(ip, snmp_version, f"{base_oid}.7.{index}")
+            platform = await self._snmp_get(ip, snmp_version, f"{base_oid}.8.{index}")
 
             neighbors.append({
                 "protocol": "CDP",
@@ -317,22 +293,21 @@ class DiscoveryEngine:
                 "remote_port": "unknown",
                 "platform": platform or "unknown"
             })
-
         return neighbors
 
-    async def _get_lldp_neighbors(self, ip: str, auth) -> List[Dict]:
+    async def _get_lldp_neighbors(self, ip: str, snmp_version: str) -> List[Dict]:
         """LLDP соседи"""
         neighbors = []
         base_oid = "1.0.8802.1.1.2.1.4.1.1"
 
         for index in range(1, 100):
-            chassis = await self._snmp_get(ip, auth, f"{base_oid}.5.{index}")
+            chassis = await self._snmp_get(ip, snmp_version, f"{base_oid}.5.{index}")
             if not chassis:
                 break
 
-            remote_port = await self._snmp_get(ip, auth, f"{base_oid}.6.{index}")
-            local_port = await self._snmp_get(ip, auth, f"{base_oid}.7.{index}")
-            sys_name = await self._snmp_get(ip, auth, f"{base_oid}.9.{index}")
+            remote_port = await self._snmp_get(ip, snmp_version, f"{base_oid}.6.{index}")
+            local_port = await self._snmp_get(ip, snmp_version, f"{base_oid}.7.{index}")
+            sys_name = await self._snmp_get(ip, snmp_version, f"{base_oid}.9.{index}")
 
             neighbors.append({
                 "protocol": "LLDP",
@@ -345,7 +320,7 @@ class DiscoveryEngine:
 
         return neighbors
 
-    async def _get_config(self, ip: str, auth, device_type: str) -> str:
+    async def _get_config(self, ip: str, snmp_version: str, device_type: str) -> str:
         """Универсальный сбор конфигурации через SNMP или SSH"""
 
         # Определяем вендора по device_type
@@ -368,7 +343,7 @@ class DiscoveryEngine:
         method = mib.get('method', 'snmp')
 
         if method == 'snmp':
-            config = await self._get_config_snmp(ip, auth, mib)
+            config = await self._get_config_snmp(ip, snmp_version, mib)
             if config:
                 return config
             # Fallback на SSH
@@ -378,7 +353,7 @@ class DiscoveryEngine:
         else:
             return ""
 
-    async def _get_config_snmp(self, ip: str, auth, mib: dict) -> Optional[str]:
+    async def _get_config_snmp(self, ip: str, snmp_version: str, mib: dict) -> Optional[str]:
         """Универсальная SNMP выгрузка конфига"""
 
         tftp_server = os.getenv("TFTP_SERVER", "")
@@ -394,31 +369,31 @@ class DiscoveryEngine:
 
         try:
             # Тип операции (running config)
-            await self._snmp_set(ip, auth, f"{base}.{mib['type_oid']}.{index}", mib['source_value'])
+            await self._snmp_set(ip, snmp_version, f"{base}.{mib['type_oid']}.{index}", mib['source_value'])
 
             # Протокол (tftp)
             if 'protocol_oid' in mib:
-                await self._snmp_set(ip, auth, f"{base}.{mib['protocol_oid']}.{index}", mib['protocol'])
+                await self._snmp_set(ip, snmp_version, f"{base}.{mib['protocol_oid']}.{index}", mib['protocol'])
 
             # Имя файла
-            await self._snmp_set(ip, auth, f"{base}.{mib['file_oid']}.{index}", filename)
+            await self._snmp_set(ip, snmp_version, f"{base}.{mib['file_oid']}.{index}", filename)
 
             # TFTP сервер
-            await self._snmp_set(ip, auth, f"{base}.{mib['server_oid']}.{index}", tftp_server)
+            await self._snmp_set(ip, snmp_version, f"{base}.{mib['server_oid']}.{index}", tftp_server)
 
             # Запуск
             status_oid = f"{base}.{mib['status_oid']}.{index}"
-            await self._snmp_set(ip, auth, status_oid, 4)  # createAndGo
+            await self._snmp_set(ip, snmp_version, status_oid, 4)
 
             # Ждём завершения
             for _ in range(30):
-                state = await self._snmp_get(ip, auth, status_oid)
-                if state == '3':  # success
+                state = await self._snmp_get(ip, snmp_version, status_oid)  # ← auth заменили
+                if state == '3':
                     break
-                elif state == '4':  # failed
+                elif state == '4':
                     error_oid = f"{base}.13.{index}" if mib.get('error_oid') else None
                     if error_oid:
-                        error = await self._snmp_get(ip, auth, error_oid)
+                        error = await self._snmp_get(ip, snmp_version, error_oid)  # ← auth заменили
                         raise Exception(f"Config copy failed: {error}")
                     raise Exception("Config copy failed")
                 await asyncio.sleep(1)
@@ -427,7 +402,7 @@ class DiscoveryEngine:
             config = await self._read_tftp_file(filename)
 
             # Очищаем
-            await self._snmp_set(ip, auth, status_oid, 6)  # destroy
+            await self._snmp_set(ip, snmp_version, status_oid, 6)
 
             return config
 
@@ -522,66 +497,118 @@ class DiscoveryEngine:
 
         return ""
 
-    async def _snmp_set(self, ip: str, auth, oid: str, value) -> Optional[bool]:
+    async def _snmp_set(self, ip: str, snmp_version: str, oid: str, value) -> Optional[bool]:
         async with self.semaphore:
             try:
-                logger.info(f"SNMP SET to {ip}, auth type: {type(auth)}")
-                snmp_engine = SnmpEngine()
-                transport = await UdpTransportTarget.create((ip, 161))
+                # Определяем тип значения
+                val_type = 'i' if isinstance(value, int) else 's'
 
-                error_indication, error_status, error_index, var_binds = await set_cmd(
-                    snmp_engine,
-                    auth,
-                    transport,
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid), value)
-                )
-                return error_indication is None and error_status == 0
+                if snmp_version == "v3":
+                    cmd = ['snmpset',
+                           '-v3',
+                           '-u', os.getenv("SNMP_V3_USER", "daria"),
+                           '-l', 'authPriv',
+                           '-a', 'SHA',
+                           '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                           '-x', 'AES',
+                           '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                           ip, oid, val_type, str(value)]
+                else:
+                    cmd = ['snmpset',
+                           '-v2c',
+                           '-c', os.getenv("SNMP_COMMUNITY", "public"),
+                           ip, oid, val_type, str(value)]
+
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
+                if result.returncode == 0:
+                    logger.info(f"SNMP SET success: {oid}={value}")
+                    return True
+                else:
+                    logger.error(f"SNMP SET failed: {result.stderr}")
+                    return False
             except Exception as e:
-                logger.error(f"SNMP SET failed for {ip}: {e}")
+                logger.error(f"SNMP SET exception: {e}")
                 return False
 
-    async def _snmp_walk(self, ip: str, auth, base_oid: str) -> Optional[List[str]]:
-        results = []
-        try:
-            snmp_engine = SnmpEngine()
-            transport = await UdpTransportTarget.create((ip, 161))
-            iterator = next_cmd(
-                snmp_engine,
-                auth,
-                transport,
-                ContextData(),
-                ObjectType(ObjectIdentity(base_oid))
-            )
-            async for error_indication, error_status, error_index, var_binds in iterator:
-                if error_indication or error_status:
-                    break
-                for var_bind in var_binds:
-                    results.append(str(var_bind[1]))
-        except Exception as e:
-            logger.debug(f"SNMP walk failed for {ip}: {e}")
-            return None
-        return results if results else None
-
-    async def _snmp_get(self, ip: str, auth, oid: str) -> Optional[str]:
+    async def _snmp_walk(self, ip: str, snmp_version: str, base_oid: str) -> Optional[List[str]]:
         async with self.semaphore:
             try:
-                snmp_engine = SnmpEngine()
-                transport = await UdpTransportTarget.create((ip, 161))
-                error_indication, error_status, error_index, var_binds = await get_cmd(
-                    snmp_engine,
-                    auth,
-                    transport,
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid))
-                )
-                if error_indication or error_status:
-                    return None
-                for var_bind in var_binds:
-                    return str(var_bind[1])
-            except Exception:
+                if snmp_version == "v3":
+                    cmd = ['snmpwalk', '-v3', '-Oqv',
+                           '-u', os.getenv("SNMP_V3_USER", "daria"),
+                           '-l', 'authPriv',
+                           '-a', 'SHA',
+                           '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                           '-x', 'AES',
+                           '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                           ip, base_oid]
+                else:
+                    cmd = ['snmpwalk', '-v2c', '-Oqv',
+                           '-c', os.getenv("SNMP_COMMUNITY", "public"),
+                           ip, base_oid]
+
+                result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
+                if result.returncode == 0 and result.stdout:
+                    return [line.strip() for line in result.stdout.strip().split('\n')]
                 return None
-            return None
+            except Exception as e:
+                logger.debug(f"SNMP walk failed for {ip}: {e}")
+                return None
+
+    async def _snmp_get(self, ip: str, snmp_version: str, oid: str) -> Optional[str]:
+        async with self.semaphore:
+            try:
+                if snmp_version == "v3":
+                    cmd = ['snmpget', '-v3', '-Oqv',
+                           '-u', os.getenv("SNMP_V3_USER", "daria"),
+                           '-l', 'authPriv',
+                           '-a', 'SHA',
+                           '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                           '-x', 'AES',
+                           '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                           ip, oid]
+                else:
+                    cmd = ['snmpget', '-v2c', '-Oqv',
+                           '-c', os.getenv("SNMP_COMMUNITY", "public"),
+                           ip, oid]
+
+                result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
+                return result.stdout.strip() if result.returncode == 0 else None
+            except Exception as e:
+                logger.error(f"SNMP GET failed: {e}")
+                return None
+
+    async def start_scan(self, task_id: str, params: dict):
+        """Запуск сканирования сети по расписанию или вручную"""
+        self.tasks[task_id] = {"status": "running", "devices_found": 0}
+        try:
+            device_id = params.get("device_id")
+            if device_id:
+                await self.collect_single_device(device_id)
+                self.tasks[task_id]["devices_found"] = 1
+            else:
+                await self.collect_all_devices()
+                conn = await asyncpg.connect(
+                    host=os.getenv("POSTGRES_HOST", "postgres"),
+                    database=os.getenv("POSTGRES_DB", "kontrollka"),
+                    user=os.getenv("POSTGRES_USER", "kontrollka"),
+                    password=os.getenv("POSTGRES_PASSWORD", "")
+                )
+                count = await conn.fetchval('SELECT COUNT(*) FROM devices')
+                await conn.close()
+                self.tasks[task_id]["devices_found"] = count
+            self.tasks[task_id]["status"] = "completed"
+        except Exception as e:
+            logger.error(f"Scan {task_id} failed: {e}")
+            self.tasks[task_id] = {
+                "status": "failed",
+                "devices_found": 0,
+                "error": str(e)
+            }
+
+    def get_status(self, task_id: str) -> Optional[dict]:
+        """Получить статус задачи сканирования"""
+        return self.tasks.get(task_id)
 
     def _vendor_from_oid(self, sys_object_id: str) -> str:
         """Определение вендора по sysObjectID"""
