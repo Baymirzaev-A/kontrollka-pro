@@ -497,34 +497,28 @@ class DiscoveryEngine:
 
         return ""
 
-    async def _snmp_set(self, ip: str, snmp_version: str, oid: str, value) -> Optional[bool]:
+    async def _snmp_set(self, ip: str, snmp_version: str, oid: str, value) -> bool:
         async with self.semaphore:
             try:
-                # Определяем тип значения
                 val_type = 'i' if isinstance(value, int) else 's'
-
                 if snmp_version == "v3":
-                    cmd = ['snmpset',
-                           '-v3',
-                           '-u', os.getenv("SNMP_V3_USER", "daria"),
-                           '-l', 'authPriv',
-                           '-a', 'SHA',
-                           '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                           '-x', 'AES',
-                           '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                    cmd = ['snmpset', '-v3', '-u', os.getenv("SNMP_V3_USER", "daria"),
+                           '-l', 'authPriv', '-a', 'SHA', '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                           '-x', 'AES', '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
                            ip, oid, val_type, str(value)]
                 else:
-                    cmd = ['snmpset',
-                           '-v2c',
-                           '-c', os.getenv("SNMP_COMMUNITY", "public"),
+                    cmd = ['snmpset', '-v2c', '-c', os.getenv("SNMP_COMMUNITY", "public"),
                            ip, oid, val_type, str(value)]
-
-                result = subprocess.run(cmd, capture_output=True, timeout=30)
-                if result.returncode == 0:
+                # Асинхронный запуск
+                process = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                if process.returncode == 0:
                     logger.info(f"SNMP SET success: {oid}={value}")
                     return True
                 else:
-                    logger.error(f"SNMP SET failed: {result.stderr}")
+                    logger.error(f"SNMP SET failed: {stderr.decode()}")
                     return False
             except Exception as e:
                 logger.error(f"SNMP SET exception: {e}")
@@ -534,48 +528,71 @@ class DiscoveryEngine:
         async with self.semaphore:
             try:
                 if snmp_version == "v3":
-                    cmd = ['snmpwalk', '-v3', '-Oqv',
-                           '-u', os.getenv("SNMP_V3_USER", "daria"),
-                           '-l', 'authPriv',
-                           '-a', 'SHA',
-                           '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                           '-x', 'AES',
-                           '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
-                           ip, base_oid]
+                    cmd = [
+                        'snmpwalk', '-v3', '-Oqv',
+                        '-u', os.getenv("SNMP_V3_USER", "daria"),
+                        '-l', 'authPriv',
+                        '-a', os.getenv("SNMP_V3_AUTH_PROTOCOL", "SHA"),
+                        '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                        '-x', os.getenv("SNMP_V3_PRIV_PROTOCOL", "AES"),
+                        '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                        ip, base_oid
+                    ]
                 else:
-                    cmd = ['snmpwalk', '-v2c', '-Oqv',
-                           '-c', os.getenv("SNMP_COMMUNITY", "public"),
-                           ip, base_oid]
+                    cmd = [
+                        'snmpwalk', '-v2c', '-Oqv',
+                        '-c', os.getenv("SNMP_COMMUNITY", "public"),
+                        ip, base_oid
+                    ]
 
-                result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
-                if result.returncode == 0 and result.stdout:
-                    return [line.strip() for line in result.stdout.strip().split('\n')]
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+
+                if process.returncode == 0 and stdout:
+                    lines = stdout.decode().strip().split('\n')
+                    return [line.strip() for line in lines if line.strip()]
                 return None
             except Exception as e:
-                logger.debug(f"SNMP walk failed for {ip}: {e}")
+                logger.debug(f"SNMP walk failed for {ip} {base_oid}: {e}")
                 return None
 
     async def _snmp_get(self, ip: str, snmp_version: str, oid: str) -> Optional[str]:
         async with self.semaphore:
             try:
                 if snmp_version == "v3":
-                    cmd = ['snmpget', '-v3', '-Oqv',
-                           '-u', os.getenv("SNMP_V3_USER", "daria"),
-                           '-l', 'authPriv',
-                           '-a', 'SHA',
-                           '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
-                           '-x', 'AES',
-                           '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
-                           ip, oid]
+                    cmd = [
+                        'snmpget', '-v3', '-Oqv',
+                        '-u', os.getenv("SNMP_V3_USER", "daria"),
+                        '-l', 'authPriv',
+                        '-a', os.getenv("SNMP_V3_AUTH_PROTOCOL", "SHA"),
+                        '-A', os.getenv("SNMP_V3_AUTH_PASSWORD", ""),
+                        '-x', os.getenv("SNMP_V3_PRIV_PROTOCOL", "AES"),
+                        '-X', os.getenv("SNMP_V3_PRIV_PASSWORD", ""),
+                        ip, oid
+                    ]
                 else:
-                    cmd = ['snmpget', '-v2c', '-Oqv',
-                           '-c', os.getenv("SNMP_COMMUNITY", "public"),
-                           ip, oid]
+                    cmd = [
+                        'snmpget', '-v2c', '-Oqv',
+                        '-c', os.getenv("SNMP_COMMUNITY", "public"),
+                        ip, oid
+                    ]
 
-                result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
-                return result.stdout.strip() if result.returncode == 0 else None
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+
+                if process.returncode == 0 and stdout:
+                    return stdout.decode().strip()
+                return None
             except Exception as e:
-                logger.error(f"SNMP GET failed: {e}")
+                logger.error(f"SNMP GET failed for {ip} {oid}: {e}")
                 return None
 
     async def start_scan(self, task_id: str, params: dict):
