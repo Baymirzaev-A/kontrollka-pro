@@ -126,10 +126,31 @@ CONFIG_MIBS = {
     },
 }
 
+from app.services.oid_resolver import OIDResolver
+
 class DiscoveryEngine:
     def __init__(self):
-        self.semaphore = asyncio.Semaphore(50)
+        self.semaphore = asyncio.Semaphore(200)
+        self.ssh_semaphore = asyncio.Semaphore(50)
         self.tasks = {}
+        self.oid_resolver = OIDResolver()
+
+    async def _get_vendor_name(self, ip: str, snmp_version: str) -> str:
+        """Определяет вендора по sysObjectID через OIDResolver"""
+        oid = self.oid_resolver.get_oid('default', 'system', 'sys_object_id')
+        sys_object_id = await self._snmp_get(ip, snmp_version, oid)
+        if sys_object_id:
+            if sys_object_id.startswith("1.3.6.1.4.1.2011"):
+                return "huawei"
+            elif sys_object_id.startswith("1.3.6.1.4.1.9"):
+                return "cisco"
+            elif sys_object_id.startswith("1.3.6.1.4.1.2636"):
+                return "juniper"
+            elif sys_object_id.startswith("1.3.6.1.4.1.30065"):
+                return "arista"
+            elif sys_object_id.startswith("1.3.6.1.4.1.6527"):
+                return "nokia"
+        return "default"
 
     async def collect_all_devices(self):
         """Сбор данных по всем устройствам из PostgreSQL"""
@@ -175,22 +196,64 @@ class DiscoveryEngine:
 
     async def _collect_device_data(self, device, snmp_version: str = "v2c"):
         ip = device["host"]
+        errors = {}
 
         # Получаем все данные через SNMP
-        firmware = await self._get_firmware(ip, snmp_version)
-        serial = await self._get_serial(ip, snmp_version)
-        vendor = await self._get_vendor(ip, snmp_version)
-        location = await self._get_location(ip, snmp_version)
-        contact = await self._get_contact(ip, snmp_version)
-        interfaces = await self._get_interfaces(ip, snmp_version)
-        neighbors = await self._get_neighbors(ip, snmp_version)
+        try:
+            firmware = await self._get_firmware(ip, snmp_version)
+        except Exception as e:
+            firmware = "Unknown"
+            errors["firmware"] = str(e)
 
-        # Конфиг через SNMP или SSH
-        config = await self._get_config(ip, snmp_version, device.get("device_type", ""))
-        # НЕ СОХРАНЯЕМ ЕСЛИ КОНФИГ ПУСТОЙ ИЛИ МЕНЬШЕ 100 СИМВОЛОВ
-        if not config or len(config) < 100:
-            logger.warning(f"Config for {ip} is empty or too short (len={len(config)}), skipping save")
-            return
+        try:
+            serial = await self._get_serial(ip, snmp_version)
+        except Exception as e:
+            serial = "Unknown"
+            errors["serial"] = str(e)
+
+        try:
+            vendor = await self._get_vendor(ip, snmp_version)
+        except Exception as e:
+            vendor = "Unknown"
+            errors["vendor"] = str(e)
+
+        try:
+            location = await self._get_location(ip, snmp_version)
+        except Exception as e:
+            location = ""
+            errors["location"] = str(e)
+
+        try:
+            contact = await self._get_contact(ip, snmp_version)
+        except Exception as e:
+            contact = ""
+            errors["contact"] = str(e)
+
+        try:
+            interfaces = await self._get_interfaces(ip, snmp_version)
+        except Exception as e:
+            interfaces = []
+            errors["interfaces"] = str(e)
+
+        try:
+            neighbors = await self._get_neighbors(ip, snmp_version)
+        except Exception as e:
+            neighbors = []
+            errors["neighbors"] = str(e)
+
+        # Конфиг
+        try:
+            config = await self._get_config(ip, snmp_version, device.get("device_type", ""))
+            if not config or len(config) < 100:
+                config = await self._get_config_ssh(ip, device.get("device_type", ""))
+                if config and len(config) >= 100:
+                    logger.info(f"SSH config collected for {ip}")
+                else:
+                    logger.warning(f"No config for {ip}")
+                    errors["config"] = "No config collected"
+        except Exception as e:
+            config = ""
+            errors["config"] = str(e)
 
         current_time = datetime.now()
 
@@ -198,15 +261,15 @@ class DiscoveryEngine:
             "ip": ip,
             "name": device["name"],
             "device_type": device["device_type"],
-            "firmware": firmware,
-            "serial": serial,
-            "vendor": vendor,
-            "location": location,
-            "contact": contact,
-            "interfaces": interfaces,
-            "neighbors": neighbors,
-            "config": config,
-            "last_collected": datetime.now()
+            "firmware": firmware or "Unknown",
+            "serial": serial or "Unknown",
+            "vendor": vendor or "Unknown",
+            "location": location or "",
+            "contact": contact or "",
+            "interfaces": interfaces or [],
+            "neighbors": neighbors or [],
+            "config": config or "",
+            "last_collected": current_time
         }
 
         logger.info(f"Final config for {ip}: length={len(data['config'])}")
@@ -214,15 +277,24 @@ class DiscoveryEngine:
         await self._save_to_neo4j(data)
         await self._save_to_clickhouse(data)
 
+        if errors:
+            logger.warning(f"Partial collection for {ip}: {errors}")
+
     async def _get_firmware(self, ip: str, snmp_version: str) -> str:
         """Версия прошивки через SNMP (sysDescr)"""
         result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.1.0")
         return result or "Unknown"
 
     async def _get_serial(self, ip: str, snmp_version: str) -> str:
-        """Серийный номер через SNMP (entPhysicalSerialNum)"""
-        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.47.1.1.1.1.11.1")
-        return result or "Unknown"
+        """Серийный номер через SNMP (с поддержкой разных вендоров)"""
+        vendor = await self._get_vendor_name(ip, snmp_version)
+        oids = self.oid_resolver.get_oid_list(vendor, 'system', 'serial')
+
+        for oid in oids:
+            result = await self._snmp_get(ip, snmp_version, oid)
+            if result and "No Such" not in result:
+                return result.strip()
+        return "Unknown"
 
     async def _get_vendor(self, ip: str, snmp_version: str) -> str:
         sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
@@ -239,30 +311,39 @@ class DiscoveryEngine:
         return result or ""
 
     async def _get_interfaces(self, ip: str, snmp_version: str) -> List[Dict]:
+        """Список интерфейсов с поддержкой разных вендоров"""
         interfaces = []
+        vendor = await self._get_vendor_name(ip, snmp_version)
+
         if_number = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.2.1.0")
         if not if_number:
             return interfaces
 
-        async def get_int(oid: str, default: int = 0) -> int:
-            val = await self._snmp_get(ip, snmp_version, oid)
-            if not val or 'No Such' in val:
-                return default
-            try:
-                return int(val)
-            except (ValueError, TypeError):
-                return default
+        async def get_value(field: str, if_index: int, default=0) -> int:
+            """Пытается получить значение по списку OID из конфига"""
+            oids = self.oid_resolver.get_oid_list(vendor, 'interfaces', field, if_index)
+            for oid in oids:
+                val = await self._snmp_get(ip, snmp_version, oid)
+                if val and 'No Such' not in val:
+                    try:
+                        return int(val)
+                    except (ValueError, TypeError):
+                        pass
+            return default
 
         for i in range(1, int(if_number) + 1):
+            name_oid = self.oid_resolver.get_oid(vendor, 'interfaces', 'if_name', i)
+            type_oid = self.oid_resolver.get_oid(vendor, 'interfaces', 'if_type', i)
+
             iface = {
                 "index": i,
-                "name": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.2.{i}") or "unknown",
-                "type": await self._snmp_get(ip, snmp_version, f"1.3.6.1.2.1.2.2.1.3.{i}") or "unknown",
-                "speed": await get_int(f"1.3.6.1.2.1.2.2.1.5.{i}"),
-                "in_errors": await get_int(f"1.3.6.1.2.1.2.2.1.14.{i}"),
-                "out_errors": await get_int(f"1.3.6.1.2.1.2.2.1.20.{i}"),
-                "in_discards": await get_int(f"1.3.6.1.2.1.2.2.1.13.{i}"),
-                "out_discards": await get_int(f"1.3.6.1.2.1.2.2.1.19.{i}"),
+                "name": await self._snmp_get(ip, snmp_version, name_oid) or "unknown",
+                "type": await self._snmp_get(ip, snmp_version, type_oid) or "unknown",
+                "speed": await get_value('if_speed', i),
+                "in_errors": await get_value('in_errors', i),
+                "out_errors": await get_value('out_errors', i),
+                "in_discards": await get_value('in_discards', i),
+                "out_discards": await get_value('out_discards', i),
             }
             interfaces.append(iface)
         return interfaces
@@ -421,7 +502,8 @@ class DiscoveryEngine:
 
     async def _get_config_ssh(self, ip: str, device_type: str) -> str:
         """SSH fallback"""
-        from netmiko import ConnectHandler
+        async with self.ssh_semaphore:
+            from netmiko import ConnectHandler
 
         commands = {
             # Cisco
@@ -705,9 +787,9 @@ class DiscoveryEngine:
                 """, ip=data["ip"], **neighbor)
 
     async def _save_to_clickhouse(self, data: dict):
-        """Сохранение в ClickHouse"""
         client = get_clickhouse_client()
 
+        # 1. Вставляем снапшот устройства
         client.execute("""
             INSERT INTO device_snapshots (
                 ip, name, device_type, vendor, firmware, serial,
@@ -727,23 +809,48 @@ class DiscoveryEngine:
             "last_collected": data["last_collected"]
         }])
 
-        for iface in data.get("interfaces", []):
-            client.execute("""
-                INSERT INTO interface_history (
-                    device_ip, interface_name, interface_index,
-                    interface_type, speed, admin_status, oper_status, collected_at
-                ) VALUES
-            """, [{
-                "device_ip": data["ip"],
-                "interface_name": iface["name"],
-                "interface_index": iface["index"],
-                "interface_type": iface["type"],
-                "speed": iface.get("speed"),
-                "admin_status": iface["admin_status"],
-                "oper_status": iface["oper_status"],
-                "collected_at": data["last_collected"]
-            }])
+        # 2. Батчевая вставка интерфейсов
+        if data.get("interfaces"):
+            batch_size = 1000
+            interfaces_batch = []
 
+            for iface in data.get("interfaces", []):
+                interfaces_batch.append({
+                    "device_ip": data["ip"],
+                    "interface_name": iface["name"],
+                    "interface_index": iface["index"],
+                    "interface_type": iface["type"],
+                    "speed": iface.get("speed"),
+                    "admin_status": iface.get("admin_status", "unknown"),
+                    "oper_status": iface.get("oper_status", "unknown"),
+                    "in_errors": iface.get("in_errors", 0),
+                    "out_errors": iface.get("out_errors", 0),
+                    "in_discards": iface.get("in_discards", 0),
+                    "out_discards": iface.get("out_discards", 0),
+                    "collected_at": data["last_collected"]
+                })
+
+                if len(interfaces_batch) >= batch_size:
+                    client.execute("""
+                        INSERT INTO interface_history (
+                            device_ip, interface_name, interface_index,
+                            interface_type, speed, admin_status, oper_status,
+                            in_errors, out_errors, in_discards, out_discards, collected_at
+                        ) VALUES
+                    """, interfaces_batch)
+                    interfaces_batch = []
+
+            # Оставшиеся интерфейсы
+            if interfaces_batch:
+                client.execute("""
+                    INSERT INTO interface_history (
+                        device_ip, interface_name, interface_index,
+                        interface_type, speed, admin_status, oper_status,
+                        in_errors, out_errors, in_discards, out_discards, collected_at
+                    ) VALUES
+                """, interfaces_batch)
+
+        # 3. Redis уведомление
         try:
             import redis.asyncio as redis
             r = await redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379"))

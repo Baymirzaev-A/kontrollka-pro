@@ -1,0 +1,185 @@
+# Стандартные OID (RFC 2863) - используются если нет специфичных для вендора
+default:
+  system:
+    sys_descr: "1.3.6.1.2.1.1.1.0"
+    sys_object_id: "1.3.6.1.2.1.1.2.0"
+    sys_location: "1.3.6.1.2.1.1.6.0"
+    sys_contact: "1.3.6.1.2.1.1.4.0"
+    sys_name: "1.3.6.1.2.1.1.5.0"
+    sys_up_time: "1.3.6.1.2.1.1.3.0"
+    serial: "1.3.6.1.2.1.47.1.1.1.1.11.1"  # entPhysicalSerialNum
+
+  interfaces:
+    if_name: "1.3.6.1.2.1.2.2.1.2.{ifIndex}"
+    if_type: "1.3.6.1.2.1.2.2.1.3.{ifIndex}"
+    if_speed: "1.3.6.1.2.1.2.2.1.5.{ifIndex}"
+    if_speed_high: "1.3.6.1.2.1.31.1.1.1.15.{ifIndex}"  # ifHighSpeed (64-bit)
+    if_admin_status: "1.3.6.1.2.1.2.2.1.7.{ifIndex}"
+    if_oper_status: "1.3.6.1.2.1.2.2.1.8.{ifIndex}"
+    if_mtu: "1.3.6.1.2.1.2.2.1.4.{ifIndex}"
+    if_last_change: "1.3.6.1.2.1.2.2.1.9.{ifIndex}"
+    in_octets: "1.3.6.1.2.1.2.2.1.10.{ifIndex}"
+    out_octets: "1.3.6.1.2.1.2.2.1.16.{ifIndex}"
+    in_unicast_pkts: "1.3.6.1.2.1.2.2.1.11.{ifIndex}"
+    out_unicast_pkts: "1.3.6.1.2.1.2.2.1.17.{ifIndex}"
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"      # ifInErrors
+      - "1.3.6.1.2.1.31.1.1.1.5.{ifIndex}"    # ifHCInErrors (64-bit, если есть)
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"      # ifOutErrors
+      - "1.3.6.1.2.1.31.1.1.1.6.{ifIndex}"    # ifHCOutErrors
+    in_discards:
+      - "1.3.6.1.2.1.2.2.1.13.{ifIndex}"     # ifInDiscards
+      - "1.3.6.1.2.1.31.1.1.1.3.{ifIndex}"    # ifHCInDiscards
+    out_discards:
+      - "1.3.6.1.2.1.2.2.1.19.{ifIndex}"     # ifOutDiscards
+      - "1.3.6.1.2.1.31.1.1.1.4.{ifIndex}"    # ifHCOutDiscards
+    in_broadcast_pkts: "1.3.6.1.2.1.31.1.1.1.9.{ifIndex}"
+    out_broadcast_pkts: "1.3.6.1.2.1.31.1.1.1.10.{ifIndex}"
+    in_multicast_pkts: "1.3.6.1.2.1.31.1.1.1.7.{ifIndex}"
+    out_multicast_pkts: "1.3.6.1.2.1.31.1.1.1.8.{ifIndex}"
+    in_unknown_protos: "1.3.6.1.2.1.2.2.1.15.{ifIndex}"
+    out_qlength: "1.3.6.1.2.1.2.2.1.21.{ifIndex}"
+
+# Специфичные OID для Huawei
+huawei:
+  system:
+    serial: "1.3.6.1.4.1.2011.6.2.1.1.1.5"
+    hardware: "1.3.6.1.4.1.2011.6.2.1.1.1.6"
+    software: "1.3.6.1.4.1.2011.6.2.1.1.1.7"
+  interfaces:
+    # Для Huawei пробуем стандартные OID, но если не сработает - вернется []
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"      # ifInErrors
+      - "1.3.6.1.2.1.31.1.1.1.5.{ifIndex}"    # ifHCInErrors (попытка получить 64-битные)
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.6.{ifIndex}"
+    in_discards:
+      - "1.3.6.1.2.1.2.2.1.13.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.3.{ifIndex}"
+    out_discards:
+      - "1.3.6.1.2.1.2.2.1.19.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.4.{ifIndex}"
+
+# Специфичные OID для Cisco
+cisco:
+  system:
+    serial: "1.3.6.1.4.1.9.3.6.3.0"  # Cisco специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.5.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.6.{ifIndex}"
+    in_discards:
+      - "1.3.6.1.2.1.2.2.1.13.{ifIndex}"
+    out_discards:
+      - "1.3.6.1.2.1.2.2.1.19.{ifIndex}"
+
+# Juniper
+juniper:
+  system:
+    serial: "1.3.6.1.4.1.2636.3.1.3.0"  # Juniper специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+    in_discards:
+      - "1.3.6.1.2.1.2.2.1.13.{ifIndex}"
+    out_discards:
+      - "1.3.6.1.2.1.2.2.1.19.{ifIndex}"
+
+# Arista
+arista:
+  system:
+    serial: "1.3.6.1.4.1.30065.1.1.1.1.1"  # Arista специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.5.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+      - "1.3.6.1.2.1.31.1.1.1.6.{ifIndex}"
+
+# Nokia (Alcatel-Lucent)
+nokia:
+  system:
+    serial: "1.3.6.1.4.1.6527.3.1.2.2.1.2"  # Nokia специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# Dell
+dell:
+  system:
+    serial: "1.3.6.1.4.1.674.10895.3000.1.2.100.1.2.1"  # Dell специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# HP/Aruba
+hp:
+  system:
+    serial: "1.3.6.1.4.1.11.2.3.9.1.1.2.1.1"  # HP специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# Extreme
+extreme:
+  system:
+    serial: "1.3.6.1.4.1.1916.1.1.1.1.1"  # Extreme специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# Brocade
+brocade:
+  system:
+    serial: "1.3.6.1.4.1.1588.2.1.1.1.1.1"  # Brocade специфичный серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# Fortinet
+fortinet:
+  system:
+    serial: "1.3.6.1.4.1.12356.101.1.1.1.1"  # Fortinet серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# MikroTik
+mikrotik:
+  system:
+    serial: "1.3.6.1.4.1.14988.1.1.1.1.1"  # MikroTik серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
+
+# Eltex
+eltex:
+  system:
+    serial: "1.3.6.1.4.1.35265.1.1.1.1.1"  # Eltex серийник
+  interfaces:
+    in_errors:
+      - "1.3.6.1.2.1.2.2.1.14.{ifIndex}"
+    out_errors:
+      - "1.3.6.1.2.1.2.2.1.20.{ifIndex}"
