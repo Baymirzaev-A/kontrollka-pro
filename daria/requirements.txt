@@ -11,10 +11,7 @@ tenacity==9.0.0
 asyncpg==0.30.0
 netmiko==4.6.0
 netmikro==0.1.0
-pycryptodome
-cryptography
 gunicorn>=21.2.0
-uvicorn[standard]>=0.24.0
 pycryptodome>=3.20.0
 cryptography>=42.0.0
 #pyOpenSSL>=24.0.0
