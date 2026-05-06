@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.models.device import ScanRequest, ScanStatus
 from app.services.discovery import DiscoveryEngine
 from app.core.db import get_clickhouse_client
-from celery_app import collect_all_devices_task, collect_device_task
 import uuid
 
 router = APIRouter()
@@ -50,15 +49,13 @@ async def get_device_configs(ip: str, per_page: int = 100):
 
 @router.post("/collect/{device_id}")
 async def collect_device_manual(device_id: str, background_tasks: BackgroundTasks):
-    task = collect_device_task.delay(int(device_id))
-    return {"status": "started", "device_id": device_id, "task_id": task.id}
-
+    background_tasks.add_task(engine.collect_single_device, device_id)
+    return {"status": "started", "device_id": device_id}
 
 @router.post("/collect-all")
-async def collect_all_devices_manual():
-    """Запуск массового сбора через Celery"""
-    task = collect_all_devices_task.delay()
-    return {"status": "started", "task_id": task.id}
+async def collect_all_devices_manual(background_tasks: BackgroundTasks):
+    background_tasks.add_task(engine.collect_all_devices)
+    return {"status": "completed"}
 
 
 @router.get("/task/{task_id}/status")
