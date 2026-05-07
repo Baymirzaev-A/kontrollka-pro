@@ -251,6 +251,7 @@ class DiscoveryEngine:
                 else:
                     logger.warning(f"No config for {ip}")
                     errors["config"] = "No config collected"
+                    config = ""
         except Exception as e:
             config = ""
             errors["config"] = str(e)
@@ -773,8 +774,23 @@ class DiscoveryEngine:
                         i.type = $type,
                         i.speed = $speed,
                         i.admin_status = $admin_status,
-                        i.oper_status = $oper_status
-                """, ip=data["ip"], **iface)
+                        i.oper_status = $oper_status,
+                        i.in_errors = $in_errors,
+                        i.out_errors = $out_errors,
+                        i.in_discards = $in_discards,
+                        i.out_discards = $out_discards
+                """,
+                                  ip=data["ip"],
+                                  name=iface.get("name"),
+                                  index=iface.get("index"),
+                                  type=iface.get("type"),
+                                  speed=iface.get("speed"),
+                                  admin_status=iface.get("admin_status", "unknown"),
+                                  oper_status=iface.get("oper_status", "unknown"),
+                                  in_errors=iface.get("in_errors", 0),
+                                  out_errors=iface.get("out_errors", 0),
+                                  in_discards=iface.get("in_discards", 0),
+                                  out_discards=iface.get("out_discards", 0))
 
             for neighbor in data.get("neighbors", []):
                 await session.run("""
