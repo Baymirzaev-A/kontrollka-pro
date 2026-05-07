@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from app.core.db import get_neo4j_driver, get_clickhouse_client
 from app.models.device import DeviceResponse
 import logging
-
+import os
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -46,20 +46,35 @@ async def get_devices(
 
 
 @router.get("/{device_id}")
-async def get_device(device_id: str) -> Dict[str, Any]:
+async def get_device(device_id: int) -> Dict[str, Any]:  # ← int вместо str
     """Получить полную информацию об устройстве из ClickHouse и Neo4j"""
+    import asyncpg
+
     driver = get_neo4j_driver()
     clickhouse = get_clickhouse_client()
 
-    # 1. Базовые данные из Neo4j
+    # 0. Получаем IP устройства из PostgreSQL по ID
+    conn = await asyncpg.connect(
+        host=os.getenv("POSTGRES_HOST", "postgres"),
+        database=os.getenv("POSTGRES_DB", "kontrollka"),
+        user=os.getenv("POSTGRES_USER", "kontrollka"),
+        password=os.getenv("POSTGRES_PASSWORD", "")
+    )
+    device_ip = await conn.fetchval("SELECT host FROM devices WHERE id = $1", device_id)
+    await conn.close()
+
+    if not device_ip:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # 1. Базовые данные из Neo4j по IP
     async with driver.session() as session:
         result = await session.run(
             "MATCH (d:Device {ip: $ip}) RETURN d",
-            ip=device_id
+            ip=device_ip
         )
         record = await result.single()
         if not record:
-            raise HTTPException(status_code=404, detail="Device not found")
+            raise HTTPException(status_code=404, detail="Device not found in Neo4j")
         d = record["d"]
 
     # 2. Данные SNMP из ClickHouse (последний снапшот)
@@ -73,14 +88,14 @@ async def get_device(device_id: str) -> Dict[str, Any]:
     }
 
     try:
-        # Получаем последний снапшот
+        # Получаем последний снапшот по IP
         snapshot_result = clickhouse.execute("""
             SELECT firmware, serial, config, last_collected, interfaces_count
             FROM device_snapshots 
             WHERE ip = %(ip)s 
             ORDER BY last_collected DESC 
             LIMIT 1
-        """, {"ip": device_id})
+        """, {"ip": device_ip})
 
         if snapshot_result:
             row = snapshot_result[0]
@@ -89,7 +104,7 @@ async def get_device(device_id: str) -> Dict[str, Any]:
             snmp_data["config"] = row[2] or ""
             snmp_data["last_collected"] = row[3]
 
-        # Получаем интерфейсы из истории
+        # Получаем интерфейсы из истории по IP
         interfaces_result = clickhouse.execute("""
             SELECT DISTINCT 
                 interface_name as name,
@@ -106,7 +121,7 @@ async def get_device(device_id: str) -> Dict[str, Any]:
             WHERE device_ip = %(ip)s 
             ORDER BY collected_at DESC
             LIMIT 1000
-        """, {"ip": device_id})
+        """, {"ip": device_ip})
 
         snmp_data["interfaces"] = []
         for row in interfaces_result:
@@ -123,19 +138,16 @@ async def get_device(device_id: str) -> Dict[str, Any]:
                 "out_discards": row[9] or 0
             })
 
-        # LLDP/CDP соседи (если есть в ClickHouse, иначе из Neo4j)
-        # Пока оставим из Neo4j, но можно добавить таблицу
-
     except Exception as e:
         logger.error(f"ClickHouse query failed: {e}")
 
-    # 3. Соседей пока берем из Neo4j (если есть)
+    # 3. Соседей берем из Neo4j по IP
     neighbors = []
     async with driver.session() as session:
         neighbors_result = await session.run("""
             MATCH (d:Device {ip: $ip})-[r:CONNECTS_TO]->(n:Device)
             RETURN n.ip as neighbor_id, r.local_port as local_port, r.remote_port as remote_port, r.protocol as protocol
-        """, ip=device_id)
+        """, ip=device_ip)
         async for record in neighbors_result:
             neighbors.append({
                 "neighbor_id": record["neighbor_id"],
@@ -146,15 +158,16 @@ async def get_device(device_id: str) -> Dict[str, Any]:
 
     # 4. Формируем полный ответ
     return {
+        "id": device_id,
         "ip": d.get("ip"),
         "name": d.get("name"),
-        "vendor": d.get("vendor") or snmp_data.get("vendor") or "Unknown",
+        "vendor": d.get("vendor") or "Unknown",
         "device_type": d.get("device_type"),
         "sys_descr": d.get("sys_descr"),
         "sys_object_id": d.get("sys_object_id"),
         "community": d.get("community"),
-        "location": d.get("location") or snmp_data.get("location", ""),
-        "contact": d.get("contact") or snmp_data.get("contact", ""),
+        "location": d.get("location") or "",
+        "contact": d.get("contact") or "",
         "last_seen": d.get("last_seen"),
         "snmp_version": d.get("snmp_version", "v2c"),
         "snmp_v3_config": d.get("snmp_v3_config"),
