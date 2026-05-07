@@ -149,6 +149,9 @@ class DiscoveryEngine:
     async def _get_vendor(self, ip: str, snmp_version: str) -> str:
         sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
         if sys_object_id:
+            # Убираем префикс "iso." если есть
+            sys_object_id = sys_object_id.replace("iso.", "")
+            logger.info(f"sysObjectID for {ip}: {sys_object_id}")
             if sys_object_id.startswith("1.3.6.1.4.1.2011"):
                 return "Huawei"
             elif sys_object_id.startswith("1.3.6.1.4.1.9"):
@@ -313,9 +316,11 @@ class DiscoveryEngine:
         result = self.clean_value(result)
         # Извлекаем номер версии (для Huawei)
         import re
-        match = re.search(r'Version\s+([^\s,]+)', result)
+        match = re.search(r'Version\s+(.+?)(?:\"|$)', result)
         if match:
-            return match.group(1)
+            full_version = match.group(1).strip()
+            # Можно оставить как есть, например "5.170 (S5731 V200R022C10SPC500)"
+            return full_version
         # Для Cisco
         match = re.search(r'Version\s+(\S+)', result)
         if match:
