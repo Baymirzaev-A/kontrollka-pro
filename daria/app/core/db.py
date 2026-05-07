@@ -3,6 +3,7 @@ import logging
 from neo4j import AsyncGraphDatabase
 from clickhouse_driver import Client as ClickHouseClient
 from tenacity import retry, stop_after_attempt, wait_exponential
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,11 @@ async def init_neo4j():
     uri = os.getenv("NEO4J_URI", "bolt://neo4j:7687")
     user = os.getenv("NEO4J_USER", "neo4j")
     password = os.getenv("NEO4J_PASSWORD", "changeme")
-    neo4j_driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+    neo4j_driver = AsyncGraphDatabase.driver(
+        uri,
+        auth=(user, password),
+        max_connection_lifetime=3600  # ← добавить
+    )
     await neo4j_driver.verify_connectivity()
     logger.info("Neo4j connected")
     return neo4j_driver
@@ -24,6 +29,14 @@ def get_neo4j_driver():
     global neo4j_driver
     if neo4j_driver is None:
         raise RuntimeError("Neo4j driver not initialized")
+    try:
+        # Проверяем, живо ли соединение
+        neo4j_driver.verify_connectivity()
+    except Exception as e:
+        logger.warning(f"Neo4j connection lost: {e}, reconnecting...")
+        # Пересоздаем драйвер
+        asyncio.create_task(init_neo4j())
+        raise RuntimeError("Neo4j driver reconnecting")
     return neo4j_driver
 
 async def close_neo4j():
