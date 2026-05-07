@@ -274,6 +274,8 @@ class DiscoveryEngine:
         }
 
         logger.info(f"Final config for {ip}: length={len(data['config'])}")
+        logger.info(
+            f"Saving to Neo4j and ClickHouse: {len(interfaces)} interfaces, firmware={firmware}, serial={serial}")
 
         await self._save_to_neo4j(data)
         await self._save_to_clickhouse(data)
