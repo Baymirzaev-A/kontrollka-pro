@@ -135,10 +135,35 @@ class DiscoveryEngine:
         self.tasks = {}
         self.oid_resolver = OIDResolver()
 
+    def clean_value(self, value):
+        if not value:
+            return ""
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        if value.startswith("'") and value.endswith("'"):
+            value = value[1:-1]
+        value = value.replace('\\"', '"')
+        return value
+
+    async def _get_vendor(self, ip: str, snmp_version: str) -> str:
+        sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
+        if sys_object_id:
+            if sys_object_id.startswith("1.3.6.1.4.1.2011"):
+                return "Huawei"
+            elif sys_object_id.startswith("1.3.6.1.4.1.9"):
+                return "Cisco"
+            elif sys_object_id.startswith("1.3.6.1.4.1.2636"):
+                return "Juniper"
+            elif sys_object_id.startswith("1.3.6.1.4.1.30065"):
+                return "Arista"
+            elif sys_object_id.startswith("1.3.6.1.4.1.6527"):
+                return "Nokia"
+        return "Unknown"
+
     async def _get_vendor_name(self, ip: str, snmp_version: str) -> str:
-        """Определяет вендора по sysObjectID через OIDResolver"""
-        oid = self.oid_resolver.get_oid('default', 'system', 'sys_object_id')
-        sys_object_id = await self._snmp_get(ip, snmp_version, oid)
+        """Определяет вендора по sysObjectID для OIDResolver"""
+        sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
         if sys_object_id:
             if sys_object_id.startswith("1.3.6.1.4.1.2011"):
                 return "huawei"
@@ -146,10 +171,6 @@ class DiscoveryEngine:
                 return "cisco"
             elif sys_object_id.startswith("1.3.6.1.4.1.2636"):
                 return "juniper"
-            elif sys_object_id.startswith("1.3.6.1.4.1.30065"):
-                return "arista"
-            elif sys_object_id.startswith("1.3.6.1.4.1.6527"):
-                return "nokia"
         return "default"
 
     async def collect_all_devices(self):
@@ -257,6 +278,7 @@ class DiscoveryEngine:
             errors["config"] = str(e)
 
         current_time = datetime.now()
+        sysname = await self._get_sysname(ip, snmp_version)
 
         data = {
             "ip": ip,
@@ -269,6 +291,7 @@ class DiscoveryEngine:
             "contact": contact or "",
             "interfaces": interfaces or [],
             "neighbors": neighbors or [],
+            "sysname": sysname,
             "config": config or "",
             "last_collected": current_time
         }
@@ -284,46 +307,59 @@ class DiscoveryEngine:
             logger.warning(f"Partial collection for {ip}: {errors}")
 
     async def _get_firmware(self, ip: str, snmp_version: str) -> str:
-        """Версия прошивки через SNMP (sysDescr)"""
         result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.1.0")
-        return result or "Unknown"
+        if not result or "No Such" in result:
+            return "Unknown"
+        result = self.clean_value(result)
+        # Извлекаем номер версии (для Huawei)
+        import re
+        match = re.search(r'Version\s+([^\s,]+)', result)
+        if match:
+            return match.group(1)
+        # Для Cisco
+        match = re.search(r'Version\s+(\S+)', result)
+        if match:
+            return match.group(1)
+        # Если ничего не нашли — возвращаем первые 50 символов без кавычек
+        return result.strip('"')[:50]
 
     async def _get_serial(self, ip: str, snmp_version: str) -> str:
-        """Серийный номер через SNMP (с поддержкой разных вендоров)"""
         vendor = await self._get_vendor_name(ip, snmp_version)
         oids = self.oid_resolver.get_oid_list(vendor, 'system', 'serial')
-
+        if not oids:
+            oids = [
+                "1.3.6.1.2.1.47.1.1.1.1.11.1",
+                "1.3.6.1.4.1.2011.6.2.1.1.1.5",
+            ]
         for oid in oids:
             result = await self._snmp_get(ip, snmp_version, oid)
             if result and "No Such" not in result:
                 return result.strip()
         return "Unknown"
 
-    async def _get_vendor(self, ip: str, snmp_version: str) -> str:
-        sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
-        if sys_object_id:
-            return self._vendor_from_oid(sys_object_id)
-        return "Unknown"
-
     async def _get_location(self, ip: str, snmp_version: str) -> str:
         result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.6.0")
-        return result or ""
+        return self.clean_value(result) or ""
 
     async def _get_contact(self, ip: str, snmp_version: str) -> str:
         result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.4.0")
-        return result or ""
+        return self.clean_value(result) or ""
+
+    async def _get_sysname(self, ip: str, snmp_version: str) -> str:
+        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.5.0")
+        return self.clean_value(result) or ""
 
     async def _get_interfaces(self, ip: str, snmp_version: str) -> List[Dict]:
         """Список интерфейсов с поддержкой разных вендоров"""
         interfaces = []
         vendor = await self._get_vendor_name(ip, snmp_version)
 
-        if_number = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.2.1.0")
-        if not if_number:
+        # Получаем все имена интерфейсов через snmpwalk
+        name_oids = await self._snmp_walk(ip, snmp_version, "1.3.6.1.2.1.2.2.1.2")
+        if not name_oids:
             return interfaces
 
         async def get_value(field: str, if_index: int, default=0) -> int:
-            """Пытается получить значение по списку OID из конфига"""
             oids = self.oid_resolver.get_oid_list(vendor, 'interfaces', field, if_index)
             for oid in oids:
                 val = await self._snmp_get(ip, snmp_version, oid)
@@ -334,13 +370,12 @@ class DiscoveryEngine:
                         pass
             return default
 
-        for i in range(1, int(if_number) + 1):
-            name_oid = self.oid_resolver.get_oid(vendor, 'interfaces', 'if_name', i)
+        for i, name in enumerate(name_oids, start=1):
             type_oid = self.oid_resolver.get_oid(vendor, 'interfaces', 'if_type', i)
 
             iface = {
                 "index": i,
-                "name": await self._snmp_get(ip, snmp_version, name_oid) or "unknown",
+                "name": self.clean_value(name) or f"interface_{i}",
                 "type": await self._snmp_get(ip, snmp_version, type_oid) or "unknown",
                 "speed": await get_value('if_speed', i),
                 "in_errors": await get_value('in_errors', i),
@@ -349,6 +384,7 @@ class DiscoveryEngine:
                 "out_discards": await get_value('out_discards', i),
             }
             interfaces.append(iface)
+
         return interfaces
 
     async def _get_neighbors(self, ip: str, snmp_version: str) -> List[Dict]:
@@ -508,71 +544,71 @@ class DiscoveryEngine:
         async with self.ssh_semaphore:
             from netmiko import ConnectHandler
 
-        commands = {
-            # Cisco
-            'cisco': 'show running-config',
-            'cisco_ios': 'show running-config',
-            'cisco_nxos': 'show running-config',
-            'cisco_xr': 'show running-config',
-            'cisco_asa': 'show running-config',
-            # Huawei
-            'huawei': 'display current-configuration',
-            'huawei_vrpv8': 'display current-configuration',
-            'huawei_olt': 'display current-configuration',
-            # Juniper
-            'juniper': 'show configuration | display set',
-            # Arista
-            'arista': 'show running-config',
-            'arista_eos': 'show running-config',
-            # HP/Aruba
-            'hp_procurve': 'show running-config',
-            'hp_comware': 'display current-configuration',
-            'aruba_os': 'show running-config',
-            # Dell
-            'dell_force10': 'show running-config',
-            'dell_os10': 'show running-config',
-            'dell_powerconnect': 'show running-config',
-            # Extreme
-            'extreme_exos': 'show configuration',
-            'extreme_ers': 'show config',
-            'extreme_nos': 'show running-config',
-            # Nokia/Alcatel
-            'alcatel_sros': 'show configuration',
-            # Brocade
-            'brocade_fastiron': 'show running-config',
-            'brocade_netiron': 'show running-config',
-            # Fortinet
-            'fortinet': 'show full-configuration',
-            # MikroTik
-            'mikrotik_routeros': 'export',
-            # Eltex
-            'eltex': 'show running-config',
-            'eltex_esr': 'show running-config',
-            # ZTE
-            'zte': 'show running-config',
-            # Linux
-            'linux': 'cat /etc/passwd',  # не храним конфиги серверов
-        }
+            commands = {
+                # Cisco
+                'cisco': 'show running-config',
+                'cisco_ios': 'show running-config',
+                'cisco_nxos': 'show running-config',
+                'cisco_xr': 'show running-config',
+                'cisco_asa': 'show running-config',
+                # Huawei
+                'huawei': 'display current-configuration',
+                'huawei_vrpv8': 'display current-configuration',
+                'huawei_olt': 'display current-configuration',
+                # Juniper
+                'juniper': 'show configuration | display set',
+                # Arista
+                'arista': 'show running-config',
+                'arista_eos': 'show running-config',
+                # HP/Aruba
+                'hp_procurve': 'show running-config',
+                'hp_comware': 'display current-configuration',
+                'aruba_os': 'show running-config',
+                # Dell
+                'dell_force10': 'show running-config',
+                'dell_os10': 'show running-config',
+                'dell_powerconnect': 'show running-config',
+                # Extreme
+                'extreme_exos': 'show configuration',
+                'extreme_ers': 'show config',
+                'extreme_nos': 'show running-config',
+                # Nokia/Alcatel
+                'alcatel_sros': 'show configuration',
+                # Brocade
+                'brocade_fastiron': 'show running-config',
+                'brocade_netiron': 'show running-config',
+                # Fortinet
+                'fortinet': 'show full-configuration',
+                # MikroTik
+                'mikrotik_routeros': 'export',
+                # Eltex
+                'eltex': 'show running-config',
+                'eltex_esr': 'show running-config',
+                # ZTE
+                'zte': 'show running-config',
+                # Linux
+                'linux': 'cat /etc/passwd',  # не храним конфиги серверов
+            }
 
-        cmd = commands.get(device_type.split('_')[0], 'show running-config')
+            cmd = commands.get(device_type.split('_')[0], 'show running-config')
 
-        try:
-            connection = ConnectHandler(
-                device_type=device_type,
-                host=ip,
-                username=os.getenv("DEVICE_USERNAME"),
-                password=os.getenv("DEVICE_PASSWORD"),
-                timeout=30,
-            )
-            connection.disable_paging()
+            try:
+                connection = ConnectHandler(
+                    device_type=device_type,
+                    host=ip,
+                    username=os.getenv("DEVICE_USERNAME"),
+                    password=os.getenv("DEVICE_PASSWORD"),
+                    timeout=30,
+                )
+                connection.disable_paging()
 
-            config = connection.send_command(cmd, read_timeout=60)
-            logger.info(f"SSH config length: {len(config)} characters")
-            connection.disconnect()
-            return config
-        except Exception as e:
-            logger.error(f"SSH config failed for {ip}: {e}")
-            return ""
+                config = connection.send_command(cmd, read_timeout=60)
+                logger.info(f"SSH config length: {len(config)} characters")
+                connection.disconnect()
+                return config
+            except Exception as e:
+                logger.error(f"SSH config failed for {ip}: {e}")
+                return ""
 
     async def _read_tftp_file(self, filename: str) -> str:
         """Чтение файла с TFTP сервера"""
@@ -764,6 +800,7 @@ class DiscoveryEngine:
                     d.serial = $serial,
                     d.location = $location,
                     d.contact = $contact,
+                    d.sysname = $sysname,
                     d.config = $config,
                     d.last_collected = $last_collected
             """, **data)
@@ -822,6 +859,7 @@ class DiscoveryEngine:
             "serial": data["serial"],
             "location": data["location"],
             "contact": data["contact"],
+            "sysname": data.get("sysname", ""),
             "config": data.get("config", ""),
             "interfaces_count": len(data.get("interfaces", [])),
             "last_collected": data["last_collected"]
