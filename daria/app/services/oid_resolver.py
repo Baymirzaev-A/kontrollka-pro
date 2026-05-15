@@ -87,3 +87,23 @@ class OIDResolver:
                 unique_oids.append(oid)
 
         return unique_oids
+
+    def get_cdp_oid(self, vendor: str, field: str, index: int = None) -> Optional[str]:
+        """Получает OID для CDP соседей"""
+        vendor_oids = self.oids.get(vendor.lower(), {})
+        cdp_config = vendor_oids.get('cdp', self.oids.get('default', {}).get('cdp', {}))
+
+        oid = cdp_config.get(field)
+        if oid and index:
+            oid = f"{cdp_config.get('base_oid', '1.3.6.1.4.1.9.9.23.1.2.1.1')}.{oid}.{index}"
+        return oid
+
+    def get_lldp_oid(self, vendor: str, field: str, index: int = None) -> Optional[str]:
+        """Получает OID для LLDP соседей"""
+        vendor_oids = self.oids.get(vendor.lower(), {})
+        lldp_config = vendor_oids.get('lldp', self.oids.get('default', {}).get('lldp', {}))
+
+        oid = lldp_config.get(field)
+        if oid and index:
+            oid = f"{lldp_config.get('base_oid', '1.0.8802.1.1.2.1.4.1.1')}.{oid}.{index}"
+        return oid

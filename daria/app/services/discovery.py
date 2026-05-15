@@ -147,34 +147,46 @@ class DiscoveryEngine:
         return value
 
     async def _get_vendor(self, ip: str, snmp_version: str) -> str:
+        """Определяет вендора по sysObjectID"""
         sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
-        if sys_object_id:
-            # Убираем префикс "iso." если есть
-            sys_object_id = sys_object_id.replace("iso.", "")
-            logger.info(f"sysObjectID for {ip}: {sys_object_id}")
-            if sys_object_id.startswith("1.3.6.1.4.1.2011"):
-                return "Huawei"
-            elif sys_object_id.startswith("1.3.6.1.4.1.9"):
-                return "Cisco"
-            elif sys_object_id.startswith("1.3.6.1.4.1.2636"):
-                return "Juniper"
-            elif sys_object_id.startswith("1.3.6.1.4.1.30065"):
-                return "Arista"
-            elif sys_object_id.startswith("1.3.6.1.4.1.6527"):
-                return "Nokia"
+        if not sys_object_id:
+            return "Unknown"
+
+        sys_object_id = sys_object_id.replace("iso.", "")
+        logger.info(f"sysObjectID for {ip}: {sys_object_id}")
+
+        # Проверяем вхождение OID вендора
+        if "1.3.6.1.4.1.2011" in sys_object_id or "3.6.1.4.1.2011" in sys_object_id:
+            return "Huawei"
+        elif "1.3.6.1.4.1.9" in sys_object_id or "3.6.1.4.1.9" in sys_object_id:
+            return "Cisco"
+        elif "1.3.6.1.4.1.2636" in sys_object_id or "3.6.1.4.1.2636" in sys_object_id:
+            return "Juniper"
+        elif "1.3.6.1.4.1.30065" in sys_object_id or "3.6.1.4.1.30065" in sys_object_id:
+            return "Arista"
+        elif "1.3.6.1.4.1.6527" in sys_object_id or "3.6.1.4.1.6527" in sys_object_id:
+            return "Nokia"
         return "Unknown"
 
     async def _get_vendor_name(self, ip: str, snmp_version: str) -> str:
-        """Определяет вендора по sysObjectID для OIDResolver"""
-        sys_object_id = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.2.0")
-        if sys_object_id:
-            if sys_object_id.startswith("1.3.6.1.4.1.2011"):
-                return "huawei"
-            elif sys_object_id.startswith("1.3.6.1.4.1.9"):
-                return "cisco"
-            elif sys_object_id.startswith("1.3.6.1.4.1.2636"):
-                return "juniper"
+        """Определяет вендора для OIDResolver (возвращает ключ для YAML)"""
+        vendor = await self._get_vendor(ip, snmp_version)
+        vendor_lower = vendor.lower()
+        if vendor_lower in ["huawei", "cisco", "juniper", "arista", "nokia"]:
+            return vendor_lower
         return "default"
+
+    async def _get_full_firmware(self, ip: str, snmp_version: str) -> str:
+        """Возвращает полную версию ПО"""
+        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.1.0")
+        if not result or "No Such" in result:
+            return "Unknown"
+        result = self.clean_value(result)
+        import re
+        match = re.search(r'Version\s+(.+?)(?:\"|$)', result, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return result[:100]
 
     async def collect_all_devices(self):
         """Сбор данных по всем устройствам из PostgreSQL"""
@@ -224,7 +236,7 @@ class DiscoveryEngine:
 
         # Получаем все данные через SNMP
         try:
-            firmware = await self._get_firmware(ip, snmp_version)
+            firmware = await self._get_full_firmware(ip, snmp_version)
         except Exception as e:
             firmware = "Unknown"
             errors["firmware"] = str(e)
@@ -410,15 +422,26 @@ class DiscoveryEngine:
 
     async def _get_cdp_neighbors(self, ip: str, snmp_version: str) -> List[Dict]:
         neighbors = []
-        base_oid = "1.3.6.1.4.1.9.9.23.1.2.1.1"
+        vendor = await self._get_vendor_name(ip, snmp_version)
+
+        base_oid = self.oid_resolver.get_cdp_oid(vendor, 'base_oid')
+        if not base_oid:
+            return neighbors
 
         for index in range(1, 100):
-            device_id = await self._snmp_get(ip, snmp_version, f"{base_oid}.6.{index}")
+            device_id_oid = self.oid_resolver.get_cdp_oid(vendor, 'neighbor_device_id', index)
+            if not device_id_oid:
+                break
+
+            device_id = await self._snmp_get(ip, snmp_version, device_id_oid)
             if not device_id:
                 break
 
-            local_port = await self._snmp_get(ip, snmp_version, f"{base_oid}.7.{index}")
-            platform = await self._snmp_get(ip, snmp_version, f"{base_oid}.8.{index}")
+            local_port_oid = self.oid_resolver.get_cdp_oid(vendor, 'local_port', index)
+            platform_oid = self.oid_resolver.get_cdp_oid(vendor, 'platform', index)
+
+            local_port = await self._snmp_get(ip, snmp_version, local_port_oid) if local_port_oid else "unknown"
+            platform = await self._snmp_get(ip, snmp_version, platform_oid) if platform_oid else "unknown"
 
             neighbors.append({
                 "protocol": "CDP",
@@ -430,18 +453,29 @@ class DiscoveryEngine:
         return neighbors
 
     async def _get_lldp_neighbors(self, ip: str, snmp_version: str) -> List[Dict]:
-        """LLDP соседи"""
         neighbors = []
-        base_oid = "1.0.8802.1.1.2.1.4.1.1"
+        vendor = await self._get_vendor_name(ip, snmp_version)
+
+        base_oid = self.oid_resolver.get_lldp_oid(vendor, 'base_oid')
+        if not base_oid:
+            return neighbors
 
         for index in range(1, 100):
-            chassis = await self._snmp_get(ip, snmp_version, f"{base_oid}.5.{index}")
+            chassis_oid = self.oid_resolver.get_lldp_oid(vendor, 'chassis_id', index)
+            if not chassis_oid:
+                break
+
+            chassis = await self._snmp_get(ip, snmp_version, chassis_oid)
             if not chassis:
                 break
 
-            remote_port = await self._snmp_get(ip, snmp_version, f"{base_oid}.6.{index}")
-            local_port = await self._snmp_get(ip, snmp_version, f"{base_oid}.7.{index}")
-            sys_name = await self._snmp_get(ip, snmp_version, f"{base_oid}.9.{index}")
+            remote_port_oid = self.oid_resolver.get_lldp_oid(vendor, 'remote_port', index)
+            local_port_oid = self.oid_resolver.get_lldp_oid(vendor, 'local_port', index)
+            sys_name_oid = self.oid_resolver.get_lldp_oid(vendor, 'sys_name', index)
+
+            remote_port = await self._snmp_get(ip, snmp_version, remote_port_oid) if remote_port_oid else "unknown"
+            local_port = await self._snmp_get(ip, snmp_version, local_port_oid) if local_port_oid else "unknown"
+            sys_name = await self._snmp_get(ip, snmp_version, sys_name_oid) if sys_name_oid else None
 
             neighbors.append({
                 "protocol": "LLDP",
@@ -451,7 +485,6 @@ class DiscoveryEngine:
                 "remote_port": remote_port or "unknown",
                 "platform": "unknown"
             })
-
         return neighbors
 
     async def _get_config(self, ip: str, snmp_version: str, device_type: str) -> str:
@@ -848,6 +881,7 @@ class DiscoveryEngine:
 
     async def _save_to_clickhouse(self, data: dict):
         client = get_clickhouse_client()
+        logger.info(f"DEBUG sysname: {data.get('sysname', 'NOT FOUND')}")
 
         # 1. Вставляем снапшот устройства
         client.execute("""
@@ -869,6 +903,8 @@ class DiscoveryEngine:
             "interfaces_count": len(data.get("interfaces", [])),
             "last_collected": data["last_collected"]
         }])
+
+        logger.info(f"DEBUG sysname inserted for {data['ip']}")
 
         # 2. Батчевая вставка интерфейсов
         if data.get("interfaces"):

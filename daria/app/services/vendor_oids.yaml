@@ -41,6 +41,21 @@ default:
     in_unknown_protos: "1.3.6.1.2.1.2.2.1.15.{ifIndex}"
     out_qlength: "1.3.6.1.2.1.2.2.1.21.{ifIndex}"
 
+  # CDP соседи
+  cdp:
+    base_oid: "1.3.6.1.4.1.9.9.23.1.2.1.1"
+    neighbor_device_id: "6"
+    local_port: "7"
+    platform: "8"
+
+  # LLDP соседи
+  lldp:
+    base_oid: "1.0.8802.1.1.2.1.4.1.1"
+    chassis _id: "5"
+    remote_port: "6"
+    local_port: "7"
+    sys_name: "9"
+
 # Специфичные OID для Huawei
 huawei:
   system:

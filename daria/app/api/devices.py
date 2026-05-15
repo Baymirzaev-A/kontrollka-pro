@@ -103,6 +103,7 @@ async def get_device(device_id: int) -> Dict[str, Any]:  # ← int вместо 
             snmp_data["serial"] = row[1] or "Unknown"
             snmp_data["config"] = row[2] or ""
             snmp_data["last_collected"] = row[3]
+            snmp_data["sysname"] = row[5] or ""
 
         # Получаем интерфейсы из истории по IP
         interfaces_result = clickhouse.execute("""
