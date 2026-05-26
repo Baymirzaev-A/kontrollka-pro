@@ -203,9 +203,6 @@
         async function executeGroupCommand() {
             const command = document.getElementById('groupCommand').value.trim();
 
-            console.log('selectedDevices:', selectedDevices);
-            console.log('selectedDevices types:', selectedDevices.map(id => typeof id));
-
             if (!command) {
                 alert('Введите команду');
                 return;
@@ -216,7 +213,6 @@
                 return;
             }
 
-            // Очищаем вывод
             const groupOutput = document.getElementById('groupOutput');
             if (groupOutput) {
                 groupOutput.innerHTML = '<span style="color: #6a9955;"># Выполнение команды: ' + command + '</span>\n';
@@ -226,80 +222,8 @@
 
             appendToGroupOutput(`🚀 Выполнение команды "${command}" на ${selectedDevices.length} устройствах...`);
 
-            showLoading();
-            document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">🔍 Проверка доступности устройств...</div>';
-
-            // Сначала проверяем доступность устройств
-            let onlineDevices = [];
-            let offlineDevices = [];
-
-            try {
-                appendToGroupOutput(`🔍 Проверка доступности устройств...`);
-
-                const statusResponse = await fetch('/api/devices/check-status', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ device_ids: selectedDevices.map(id => parseInt(id)) })
-                });
-
-                if (statusResponse.status === 429) {
-                    const data = await statusResponse.json();
-                    alert('⚠️ ' + data.message);
-                    return;
-                }
-
-                const statusData = await statusResponse.json();
-
-                if (statusData.success) {
-                    // Разделяем устройства на онлайн и оффлайн
-                    for (const [id, info] of Object.entries(statusData.statuses)) {
-                        if (info.online) {
-                            onlineDevices.push(parseInt(id));
-                        } else {
-                            offlineDevices.push({
-                                id: parseInt(id),
-                                name: info.name,
-                                host: info.host
-                            });
-                        }
-                    }
-
-                    // Если есть оффлайн устройства, спрашиваем пользователя
-                    if (offlineDevices.length > 0) {
-                        const offlineList = offlineDevices.map(d => `  • ${d.name} (${d.host})`).join('\n');
-                        const confirmMsg = `⚠️ Следующие устройства НЕДОСТУПНЫ:\n${offlineList}\n\nПродолжить выполнение только на доступных (${onlineDevices.length} из ${selectedDevices.length})?`;
-
-                        if (!confirm(confirmMsg)) {
-                            hideLoading();
-                            appendToGroupOutput(`❌ Выполнение отменено пользователем`, true);
-                            return;
-                        }
-                        appendToGroupOutput(`⚠️ Пропущено недоступных устройств: ${offlineDevices.length}`);
-                    }
-
-                    if (onlineDevices.length === 0) {
-                        hideLoading();
-                        appendToGroupOutput(`❌ Нет доступных устройств для выполнения команды`, true);
-                        alert('❌ Нет доступных устройств для выполнения команды');
-                        return;
-                    }
-
-                    appendToGroupOutput(`📡 Доступно устройств: ${onlineDevices.length} из ${selectedDevices.length}`);
-
-                    // Выполняем команду только на доступных устройствах
-                    await executeCommandOnDevices(command, onlineDevices);
-
-                } else {
-                    hideLoading();
-                    appendToGroupOutput(`❌ Ошибка проверки статуса: ${statusData.error}`, true);
-                    alert('❌ Ошибка проверки статуса: ' + statusData.error);
-                }
-
-            } catch (error) {
-                hideLoading();
-                appendToGroupOutput(`❌ Ошибка проверки статуса: ${error}`, true);
-                alert('❌ Ошибка проверки статуса: ' + error);
-            }
+            const numericIds = selectedDevices.map(id => parseInt(id));
+            await executeCommandOnDevices(command, numericIds);
         }
 
     // Новая функция для выполнения команды на устройствах (через Celery)
