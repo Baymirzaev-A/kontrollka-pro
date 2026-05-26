@@ -1835,8 +1835,8 @@ def inject_daria_url():
 @app.route('/api/task/<task_id>/status', methods=['GET'])
 @login_required
 def task_status(task_id):
-    from celery import current_app
-    task = current_app.AsyncResult(task_id)
+    from celery_app import app as celery_app
+    task = celery_app.AsyncResult(task_id)
 
     if task.ready():
         if task.successful():
