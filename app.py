@@ -1,23 +1,3 @@
-import paramiko
-
-# Все старые алгоритмы с движками
-LEGACY_KEX = {
-    'diffie-hellman-group1-sha1': 'kex_group1',
-    'diffie-hellman-group14-sha1': 'kex_group14',
-    'diffie-hellman-group-exchange-sha1': 'kex_gex',
-}
-
-for algo, module_name in LEGACY_KEX.items():
-    try:
-        module = __import__(f'paramiko.{module_name}', fromlist=[''])
-        kex_class = getattr(module, module.classes[0]) if hasattr(module, 'classes') else None
-        if kex_class:
-            paramiko.Transport._kex_info[algo] = kex_class
-            if algo not in paramiko.Transport._preferred_kex:
-                paramiko.Transport._preferred_kex = (algo,) + paramiko.Transport._preferred_kex
-    except:
-        pass
-
 import eventlet
 eventlet.monkey_patch()
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
