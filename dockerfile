@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     python3-dev \
     openssh-client \
+    openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

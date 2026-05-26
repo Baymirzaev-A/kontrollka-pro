@@ -1,3 +1,8 @@
+import paramiko
+
+for algo in ['diffie-hellman-group1-sha1', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha1']:
+    if algo not in paramiko.Transport._preferred_kex:
+        paramiko.Transport._preferred_kex = (algo,) + paramiko.Transport._preferred_kex
 import eventlet
 eventlet.monkey_patch()
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
