@@ -296,3 +296,77 @@ def execute_group_command_parallel(device_ids: list, command: str, username: str
     result = chord(tasks)(callback)
 
     return result.id
+
+
+@app.task(bind=True, max_retries=1, soft_time_limit=120, time_limit=150)
+def execute_device_script_task(self, device_id: int, script_id: str, username: str, device_params: dict):
+    """
+    Выполнить скрипт на одном устройстве
+    """
+    from netmiko import ConnectHandler
+    from scripts import get_script
+
+    logger.info(f"Task {self.request.id}: Executing script {script_id} on device {device_id}")
+
+    try:
+        script = get_script(script_id)
+        if not script:
+            return {
+                'device_id': device_id,
+                'device_name': device_params.get('host', 'unknown'),
+                'success': False,
+                'error': 'Скрипт не найден'
+            }
+
+        connection = ConnectHandler(**device_params)
+
+        # Pre-check
+        pre_ok, pre_msg = script.pre_check(connection, {'id': device_id, 'name': device_params.get('host')})
+        if not pre_ok:
+            connection.disconnect()
+            return {
+                'device_id': device_id,
+                'device_name': device_params.get('host', 'unknown'),
+                'success': False,
+                'error': f"Pre-check failed: {pre_msg}"
+            }
+
+        # Execute
+        output = script.execute(connection, {'id': device_id, 'name': device_params.get('host')})
+
+        # Post-check
+        post_ok, post_msg = script.post_check(connection, {'id': device_id, 'name': device_params.get('host')})
+
+        connection.disconnect()
+
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': True,
+            'output': output,
+            'post_check': {'success': post_ok, 'message': post_msg} if not post_ok else None
+        }
+
+    except Exception as e:
+        logger.error(f"Task {self.request.id}: Failed on device {device_id} - {e}")
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': False,
+            'error': str(e)
+        }
+
+
+def execute_group_script_parallel(device_ids: list, script_id: str, username: str, devices_info: list):
+    """
+    Параллельное выполнение скрипта на группе устройств
+    """
+    tasks = [
+        execute_device_script_task.s(device_id, script_id, username, device_params)
+        for device_id, device_params in zip(device_ids, devices_info)
+    ]
+
+    callback = notify_completion.s(f"SCRIPT: {script_id}", username)
+    result = chord(tasks)(callback)
+
+    return result.id

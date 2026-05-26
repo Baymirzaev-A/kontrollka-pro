@@ -8,13 +8,6 @@ RUN apt-get update && apt-get install -y \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /etc/ssh && \
-    echo "Host *" >> /etc/ssh/ssh_config && \
-    echo "    KexAlgorithms +diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1" >> /etc/ssh/ssh_config && \
-    echo "    HostKeyAlgorithms +ssh-rsa,ssh-dss" >> /etc/ssh/ssh_config && \
-    echo "    Ciphers +aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc" >> /etc/ssh/ssh_config && \
-    echo "    MACs +hmac-sha1,hmac-md5" >> /etc/ssh/ssh_config
-
 WORKDIR /app
 
 # Копируем зависимости

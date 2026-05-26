@@ -1057,5 +1057,32 @@
                 }
             });
         });
+        // ========== ОБРАБОТЧИКИ ВВОДА КОМАНД ==========
+        sendBtn.addEventListener('click', () => {
+            const command = commandInput.value.trim();
+            if (command) {
+                executeCommand(command);
+                commandInput.value = '';
+            }
+        });
+
+        commandInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const command = commandInput.value.trim();
+                if (command) {
+                    executeCommand(command);
+                    commandInput.value = '';
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateHistory(-1);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateHistory(1);
+            }
+        });
+
+        commandInput.focus();
     </script>
     {% endblock %}

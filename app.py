@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from models.user import UserModel
 from auth import authenticate, AUTH_MODE
-from celery_app import execute_group_command_parallel
+from celery_app import execute_group_command_parallel, execute_group_script_parallel
 
 print("=== DEBUG ===")
 print(f"AUTH_MODE = {os.environ.get('AUTH_MODE')}")
@@ -451,6 +451,7 @@ def get_device_params(device):
         'timeout': 30,
         'session_timeout': 60,
         'global_delay_factor': 2,
+        'disabled_algorithms': {},
     }
 
     # SSH-ключ для серверов (если задан)
@@ -922,7 +923,6 @@ def execute_command(device_id):
 @login_required
 @limiter.limit("5 per minute")
 def execute_group_command():
-    """Выполнение команды на нескольких выбранных устройствах (параллельно через Celery)"""
     data = request.json
     command = data.get('command')
     device_ids = data.get('device_ids', [])
@@ -930,10 +930,9 @@ def execute_group_command():
     if not command:
         return jsonify({'error': 'Команда не указана'}), 400
 
-    # ===== ПРОВЕРКА НА ОПАСНЫЕ КОМАНДЫ =====
     if is_dangerous_command(command):
         return jsonify({
-            'error': '❌ Эта команда запрещена в консоли. Используйте скрипты для изменения конфигурации.',
+            'error': '❌ Эта команда запрещена в консоли',
             'command': command
         }), 403
 
@@ -942,26 +941,29 @@ def execute_group_command():
 
     if len(device_ids) > MAX_DEVICES_PER_GROUP:
         return jsonify({
-            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP} за раз.',
+            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP}',
             'limit': MAX_DEVICES_PER_GROUP,
             'selected': len(device_ids)
         }), 400
 
-    # Получаем параметры подключения для каждого устройства
-    devices_info = []
+    # Собираем параметры подключения
     valid_device_ids = []
+    devices_info = []
 
     for device_id in device_ids:
         device = db.get_device(device_id)
         if device:
+            params = get_device_params(device)
+            params['disabled_algorithms'] = {}  # Для старых устройств
             valid_device_ids.append(device_id)
-            devices_info.append(get_device_params(device))
+            devices_info.append(params)
 
     if not valid_device_ids:
         return jsonify({'error': 'Нет доступных устройств'}), 400
 
-    # Запускаем параллельное выполнение через Celery
     username = session.get('username', 'unknown')
+
+    # Вызываем НОВУЮ функцию с правильными параметрами
     task_id = execute_group_command_parallel(
         valid_device_ids,
         command,
@@ -1012,6 +1014,7 @@ def execute_script(device_id):
 
     # Подключаемся
     device_params = get_device_params(device)
+    device_params['disabled_algorithms'] = {}
 
     connection = None
     try:
@@ -1055,7 +1058,7 @@ def execute_script(device_id):
 @app.route('/api/group/execute_script', methods=['POST'])
 @login_required
 def execute_group_script():
-    """Выполняет скрипт на нескольких выбранных устройствах"""
+    """Выполняет скрипт на нескольких выбранных устройствах через Celery"""
     data = request.json
     script_id = data.get('script_id')
     device_ids = data.get('device_ids', [])
@@ -1070,67 +1073,45 @@ def execute_group_script():
     if not script:
         return jsonify({'error': 'Скрипт не найден'}), 404
 
-    results = []
+    if len(device_ids) > MAX_DEVICES_PER_GROUP:
+        return jsonify({
+            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP}',
+            'limit': MAX_DEVICES_PER_GROUP,
+            'selected': len(device_ids)
+        }), 400
+
+    # Собираем параметры подключения
+    valid_device_ids = []
+    devices_info = []
 
     for device_id in device_ids:
         device = db.get_device(device_id)
-        if not device:
-            results.append({
-                'device_id': device_id,
-                'device_name': 'Неизвестно',
-                'success': False,
-                'error': 'Устройство не найдено'
-            })
-            continue
+        if device:
+            params = get_device_params(device)
+            params['disabled_algorithms'] = {}
+            valid_device_ids.append(device_id)
+            devices_info.append(params)
 
-        device_params = get_device_params(device)
+    if not valid_device_ids:
+        return jsonify({'error': 'Нет доступных устройств'}), 400
 
-        connection = None
-        try:
-            connection = ConnectHandler(**device_params)
+    username = session.get('username', 'unknown')
 
-            # Pre-check
-            pre_ok, pre_msg = script.pre_check(connection, device)
-            if not pre_ok:
-                results.append({
-                    'device_id': device_id,
-                    'device_name': device['name'],
-                    'success': False,
-                    'error': f"Pre-check failed: {pre_msg}"
-                })
-                continue
+    task_id = execute_group_script_parallel(
+        valid_device_ids,
+        script_id,
+        username,
+        devices_info
+    )
 
-            # Execute
-            output = script.execute(connection, device)
+    logger.info(f"Group script task created: {task_id}, devices: {len(valid_device_ids)}")
 
-            # Post-check
-            post_ok, post_msg = script.post_check(connection, device)
-
-            # Сохраняем в историю
-            username = session.get('username', 'unknown')
-            db.save_command_history(device_id, f"SCRIPT: {script.get_name()}", output, username)
-
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': True,
-                'output': output,
-                'post_check': {'success': post_ok, 'message': post_msg} if not post_ok else None
-            })
-
-        except Exception as e:
-            logger.error(f"Ошибка для устройства {device['name']}: {str(e)}")
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': False,
-                'error': str(e)
-            })
-        finally:
-            if connection:
-                connection.disconnect()
-
-    return jsonify({'success': True, 'results': results})
+    return jsonify({
+        'success': True,
+        'task_id': task_id,
+        'message': f'Запущено выполнение скрипта на {len(valid_device_ids)} устройствах',
+        'devices_count': len(valid_device_ids)
+    })
 
 
 @app.route('/api/device/<int:device_id>/save_config', methods=['POST'])
@@ -1150,6 +1131,7 @@ def save_config(device_id):
         'timeout': 30,
         'session_timeout': 60,
         'global_delay_factor': 2,
+        'disabled_algorithms': {},
     }
 
     if DEVICE_ENABLE:
