@@ -20,4 +20,4 @@ RUN ansible-galaxy collection install ansible.netcommon || true; \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir redis pyyaml ansible-pylibssh
+RUN pip install --no-cache-dir redis pyyaml ansible-pylibssh netmiko paramiko
