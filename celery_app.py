@@ -303,6 +303,9 @@ def execute_device_script_task(self, device_id: int, script_id: str, username: s
     """
     Выполнить скрипт на одном устройстве
     """
+    import sys
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
     from netmiko import ConnectHandler
     from scripts import get_script
 
