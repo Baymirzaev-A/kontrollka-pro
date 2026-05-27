@@ -97,8 +97,8 @@ services:
 
   celery-worker:
     build:
-      context: ./ansible-worker
-      dockerfile: dockerfile
+      context: .
+      dockerfile: dockerfile.celery
     container_name: kontrollka_celery_worker
     restart: always
     deploy:
@@ -111,7 +111,7 @@ services:
       - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
       - DARIA_SCHEDULE=${DARIA_SCHEDULE:-0 2 * * 0}
     volumes:
-      - ./ansible-worker:/app
+      - .:/app
     depends_on:
       redis:
         condition: service_healthy
