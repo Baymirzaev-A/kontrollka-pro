@@ -595,20 +595,42 @@
         })
         .then(response => response.json())
         .then(data => {
-            hideLoading();
-
-            if (data.success) {
-                let message = `✅ Скрипт выполнен на ${data.results.length} устройствах:\n`;
-                let successCount = data.results.filter(r => r.success).length;
-                let failCount = data.results.filter(r => !r.success).length;
-                message += `✅ Успешно: ${successCount}\n`;
-                message += `❌ Ошибок: ${failCount}`;
-
-                alert(message);
-                console.log('Результаты:', data.results);
-            } else {
+            if (!data.success) {
+                hideLoading();
                 alert('❌ Ошибка: ' + data.error);
+                return;
             }
+
+            const taskId = data.task_id;
+
+            // Опрашиваем статус задачи
+            const interval = setInterval(() => {
+                fetch(`/api/task/${taskId}/status`)
+                    .then(r => r.json())
+                    .then(statusData => {
+                        if (statusData.status === 'completed') {
+                            clearInterval(interval);
+                            hideLoading();
+
+                            const result = statusData.result;
+                            const results = result.results || result;
+                            let successCount = results.filter(r => r.success).length;
+                            let failCount = results.filter(r => !r.success).length;
+
+                            alert(`✅ Скрипт выполнен\n✅ Успешно: ${successCount}\n❌ Ошибок: ${failCount}`);
+                            console.log('Результаты:', results);
+                        } else if (statusData.status === 'failed') {
+                            clearInterval(interval);
+                            hideLoading();
+                            alert('❌ Выполнение не удалось: ' + statusData.error);
+                        }
+                    })
+                    .catch(err => {
+                        clearInterval(interval);
+                        hideLoading();
+                        alert('❌ Ошибка: ' + err);
+                    });
+            }, 2000);
         })
         .catch(error => {
             hideLoading();

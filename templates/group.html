@@ -287,7 +287,63 @@
         }, 2000);
     }
 
+    async function executeScriptOnDevices(scriptId, deviceIds) {
+        appendToGroupOutput(`🚀 Запуск параллельного выполнения скрипта на ${deviceIds.length} устройствах...`);
+
+        const response = await fetch('/api/group/execute_script', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                script_id: scriptId,
+                device_ids: deviceIds
+            })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            appendToGroupOutput(`❌ Ошибка: ${data.error}`, true);
+            return;
+        }
+
+        const taskId = data.task_id;
+        appendToGroupOutput(`📋 ID задачи: ${taskId}`);
+
+        showProgress(0, deviceIds.length);
+
+        const interval = setInterval(async () => {
+            try {
+                const statusResponse = await fetch(`/api/task/${taskId}/status`);
+                const statusData = await statusResponse.json();
+
+                if (statusData.status === 'completed') {
+                    clearInterval(interval);
+                    hideProgress();
+                    hideLoading();
+
+                    const data = statusData.result;
+                    const results = data.results || data;
+                    appendToGroupOutput(`✅ Выполнение завершено. Успешно: ${data.success}, Ошибок: ${data.failed}`);
+                    displayResults(results, `Скрипт: ${scriptId}`);
+                } else if (statusData.status === 'failed') {
+                    clearInterval(interval);
+                    hideProgress();
+                    hideLoading();
+                    appendToGroupOutput(`❌ Выполнение не удалось: ${statusData.error}`, true);
+                }
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
+        }, 2000);
+    }
+
     function displayResults(results, command) {
+
+        if (!results || !Array.isArray(results)) {
+            appendToGroupOutput('❌ Ошибка: неверный формат результатов', true);
+            return;
+        }
+
         appendToGroupOutput(`📊 Формирование отчета по ${results.length} устройствам...`);
 
         const container = document.getElementById('resultsContainer');
