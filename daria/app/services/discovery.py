@@ -177,16 +177,35 @@ class DiscoveryEngine:
         return "default"
 
     async def _get_full_firmware(self, ip: str, snmp_version: str) -> str:
-        """Возвращает полную версию ПО"""
         result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.1.0")
         if not result or "No Such" in result:
             return "Unknown"
         result = self.clean_value(result)
+
         import re
-        match = re.search(r'Version\s+(.+?)(?:\"|$)', result, re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-        return result[:100]
+        # Порядок: сначала самые специфичные, потом общие
+        patterns = [
+            # Huawei VRP: "Version 5.170 (S5731 V200R022C10SPC500)"
+            (r'Version\s+(.+?)(?:["\r\n]|$)', re.IGNORECASE),
+            # Cisco IOS: "Version 15.2(4)M6, RELEASE SOFTWARE"
+            (r'Version\s+(\S+),?\s*\w*\s*\w*', re.IGNORECASE),
+            # Juniper: "Junos 21.4R3.15"
+            (r'[Jj]unos\s+(\S+)', 0),
+            # Arista: "EOS 4.28.3M"
+            (r'EOS\s+(\S+)', 0),
+            # Nokia: "TiMOS-B-20.5.R3"
+            (r'TiMOS[^\s]*\s+(\S+)', 0),
+            # Generic: любое "Version X.Y.Z" в конце строки
+            (r'Version\s+(\S+)', re.IGNORECASE),
+        ]
+
+        for pattern, flags in patterns:
+            match = re.search(pattern, result, flags)
+            if match:
+                return match.group(1).strip()
+
+        # Если ничего не подошло — первые 100 символов
+        return result.strip()[:100]
 
     async def collect_all_devices(self):
         """Сбор данных по всем устройствам из PostgreSQL"""
@@ -321,25 +340,6 @@ class DiscoveryEngine:
         if errors:
             logger.warning(f"Partial collection for {ip}: {errors}")
 
-    async def _get_firmware(self, ip: str, snmp_version: str) -> str:
-        result = await self._snmp_get(ip, snmp_version, "1.3.6.1.2.1.1.1.0")
-        if not result or "No Such" in result:
-            return "Unknown"
-        result = self.clean_value(result)
-        # Извлекаем номер версии (для Huawei)
-        import re
-        match = re.search(r'Version\s+(.+?)(?:\"|$)', result)
-        if match:
-            full_version = match.group(1).strip()
-            # Можно оставить как есть, например "5.170 (S5731 V200R022C10SPC500)"
-            return full_version
-        # Для Cisco
-        match = re.search(r'Version\s+(\S+)', result)
-        if match:
-            return match.group(1)
-        # Если ничего не нашли — возвращаем первые 50 символов без кавычек
-        return result.strip('"')[:50]
-
     async def _get_serial(self, ip: str, snmp_version: str) -> str:
         vendor = await self._get_vendor_name(ip, snmp_version)
         oids = self.oid_resolver.get_oid_list(vendor, 'system', 'serial')
@@ -349,9 +349,15 @@ class DiscoveryEngine:
                 "1.3.6.1.4.1.2011.6.2.1.1.1.5",
             ]
         for oid in oids:
-            result = await self._snmp_get(ip, snmp_version, oid)
-            if result and "No Such" not in result:
-                return result.strip()
+            results = await self._snmp_walk(ip, snmp_version, oid)
+            if results:
+                for val in results:
+                    val = val.strip().strip('"').strip("'")
+                    if val:
+                        logger.info(f"SERIAL {oid} for {ip}: {val}")
+                        return val
+
+        logger.warning(f"No serial found for {ip}, tried: {oids}")
         return "Unknown"
 
     async def _get_location(self, ip: str, snmp_version: str) -> str:
@@ -408,15 +414,21 @@ class DiscoveryEngine:
         """LLDP/CDP соседи"""
         neighbors = []
 
-        # Пробуем CDP (Cisco)
-        cdp = await self._get_cdp_neighbors(ip, snmp_version)
-        if cdp:
-            return cdp
+        # Пробуем LLDP первым (более универсальный)
+        try:
+            lldp = await self._get_lldp_neighbors(ip, snmp_version)
+            if lldp:
+                neighbors.extend(lldp)
+        except Exception as e:
+            logger.debug(f"LLDP failed for {ip}: {e}")
 
-        # Пробуем LLDP
-        lldp = await self._get_lldp_neighbors(ip, snmp_version)
-        if lldp:
-            return lldp
+        # Пробуем CDP
+        try:
+            cdp = await self._get_cdp_neighbors(ip, snmp_version)
+            if cdp:
+                neighbors.extend(cdp)
+        except Exception as e:
+            logger.debug(f"CDP failed for {ip}: {e}")
 
         return neighbors
 
@@ -722,7 +734,11 @@ class DiscoveryEngine:
 
                 if process.returncode == 0 and stdout:
                     lines = stdout.decode().strip().split('\n')
-                    return [line.strip() for line in lines if line.strip()]
+                    # Фильтруем ошибки SNMP и пустые строки
+                    return [line.strip() for line in lines
+                            if line.strip()
+                            and 'No Such' not in line
+                            and 'Error' not in line]
                 return None
             except Exception as e:
                 logger.debug(f"SNMP walk failed for {ip} {base_oid}: {e}")
@@ -757,7 +773,11 @@ class DiscoveryEngine:
                 stdout, stderr = await process.communicate()
 
                 if process.returncode == 0 and stdout:
-                    return stdout.decode().strip()
+                    result = stdout.decode().strip()
+                    # Фильтруем ошибки SNMP
+                    if 'No Such' in result or 'Error' in result:
+                        return None
+                    return result
                 return None
             except Exception as e:
                 logger.error(f"SNMP GET failed for {ip} {oid}: {e}")
@@ -887,7 +907,7 @@ class DiscoveryEngine:
         client.execute("""
             INSERT INTO device_snapshots (
                 ip, name, device_type, vendor, firmware, serial,
-                location, contact, config, interfaces_count, last_collected
+                location, contact, sysname, config, interfaces_count, last_collected
             ) VALUES
         """, [{
             "ip": data["ip"],

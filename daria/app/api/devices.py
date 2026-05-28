@@ -90,7 +90,7 @@ async def get_device(device_id: int) -> Dict[str, Any]:  # ← int вместо 
     try:
         # Получаем последний снапшот по IP
         snapshot_result = clickhouse.execute("""
-            SELECT firmware, serial, config, last_collected, interfaces_count
+            SELECT firmware, serial, config, last_collected, interfaces_count, sysname
             FROM device_snapshots 
             WHERE ip = %(ip)s 
             ORDER BY last_collected DESC 
@@ -103,6 +103,7 @@ async def get_device(device_id: int) -> Dict[str, Any]:  # ← int вместо 
             snmp_data["serial"] = row[1] or "Unknown"
             snmp_data["config"] = row[2] or ""
             snmp_data["last_collected"] = row[3]
+            snmp_data["interfaces_count"] = row[4] or 0
             snmp_data["sysname"] = row[5] or ""
 
         # Получаем интерфейсы из истории по IP
