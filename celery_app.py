@@ -5,7 +5,7 @@ import json
 import subprocess
 import tempfile
 import yaml
-
+from celery import group, chord
 import logging
 
 # Настройка логирования
@@ -66,6 +66,64 @@ app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=True,
 )
+
+# ===== ПЛАНИРОВЩИК UCMDB (РАЗ В НЕДЕЛЮ) =====
+from celery.schedules import crontab
+
+
+def parse_cron(cron_string: str):
+    """Преобразует строку cron в crontab объект"""
+    parts = cron_string.split()
+    if len(parts) != 5:
+        return crontab(day_of_week=0, hour=2, minute=0)  # дефолт: воскресенье 2:00
+
+    minute, hour, day_of_month, month, day_of_week = parts
+    return crontab(
+        minute=minute if minute != '*' else '*',
+        hour=hour if hour != '*' else '*',
+        day_of_month=day_of_month if day_of_month != '*' else '*',
+        month_of_year=month if month != '*' else '*',
+        day_of_week=day_of_week if day_of_week != '*' else '*'
+    )
+
+
+# ===== ЗАДАЧИ ДЛЯ DARIA (МАССОВЫЙ SNMP СБОР) =====
+@app.task(bind=True, name='daria.tasks.collect_all_devices')
+def collect_all_devices_task(self):
+    """Массовый сбор SNMP данных по всем устройствам"""
+    import requests
+    try:
+        response = requests.post(
+            'http://daria-api:8000/api/discovery/collect-all',
+            timeout=5
+        )
+        logger.info(f"DARIA collect all started: {response.json()}")
+        return {'status': 'started', 'response': response.json()}
+    except Exception as e:
+        logger.error(f"DARIA collect all failed: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
+
+@app.task(bind=True, name='daria.tasks.collect_device')
+def collect_device_task(self, device_id: int):
+    """Сбор SNMP данных по одному устройству"""
+    import requests
+    try:
+        response = requests.post(
+            f'http://daria-api:8000/api/discovery/collect/{device_id}',
+            timeout=60
+        )
+        return {'status': 'started', 'response': response.json()}
+    except Exception as e:
+        logger.error(f"DARIA collect device {device_id} failed: {e}")
+        return {'status': 'failed', 'error': str(e)}
+
+app.conf.beat_schedule = {
+    'daria-collect-weekly': {
+        'task': 'daria.tasks.collect_all_devices',
+        'schedule': parse_cron(os.environ.get('DARIA_SCHEDULE', '0 2 * * 0')),
+    },
+}
 
 # SSH аргументы
 SSH_COMMON_ARGS = (
@@ -161,3 +219,157 @@ def run_playbook_task(self, task_data):
             if path and os.path.exists(path):
                 os.unlink(path)
                 logger.debug(f"Task {task_id}: Removed temp file {path}")
+
+
+# ===== CELERY CANVAS: ПАРАЛЛЕЛЬНОЕ ВЫПОЛНЕНИЕ КОМАНД =====
+
+@app.task(bind=True, max_retries=2, soft_time_limit=120, time_limit=150)
+def execute_device_command_task(self, device_id: int, command: str, username: str, device_params: dict):
+    """
+    Выполнить команду на одном устройстве через Netmiko
+    Запускается параллельно для каждого устройства (group)
+    """
+    from netmiko import ConnectHandler
+
+    logger.info(f"Task {self.request.id}: Executing on device {device_id}")
+
+    try:
+        connection = ConnectHandler(**device_params)
+        output = connection.send_command(command, read_timeout=60)
+        connection.disconnect()
+
+        # Сохраняем в историю (опционально, можно через API)
+        # _save_command_history(device_id, command, output, username)
+
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': True,
+            'output': output
+        }
+    except Exception as e:
+        logger.error(f"Task {self.request.id}: Failed on device {device_id} - {e}")
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': False,
+            'error': str(e)
+        }
+
+
+@app.task
+def notify_completion(results, command: str, username: str):
+    """
+    Callback после выполнения всех команд (chord)
+    """
+    total = len(results)
+    success_count = sum(1 for r in results if r['success'])
+    error_count = total - success_count
+
+    logger.info(f"✅ Команда '{command}' выполнена: успешно={success_count}, ошибок={error_count}")
+
+    # TODO: Отправить WebSocket уведомление через Redis
+    # r = redis.Redis(host='redis', port=6379)
+    # r.publish('group_command_complete', json.dumps({'total': total, 'success': success_count}))
+
+    return {
+        'total': total,
+        'success': success_count,
+        'failed': error_count,
+        'results': results
+    }
+
+
+def execute_group_command_parallel(device_ids: list, command: str, username: str, devices_info: list):
+    """
+    Параллельное выполнение команды на группе устройств
+    devices_info: список словарей с параметрами подключения для каждого устройства
+    """
+    # Создаём группу задач (все запускаются параллельно)
+    tasks = [
+        execute_device_command_task.s(device_id, command, username, device_params)
+        for device_id, device_params in zip(device_ids, devices_info)
+    ]
+
+    # chord = group + callback (выполняется после завершения всех)
+    callback = notify_completion.s(command, username)
+    result = chord(tasks)(callback)
+
+    return result.id
+
+
+@app.task(bind=True, max_retries=1, soft_time_limit=120, time_limit=150)
+def execute_device_script_task(self, device_id: int, script_id: str, username: str, device_params: dict):
+    """
+    Выполнить скрипт на одном устройстве
+    """
+    import sys
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+    from netmiko import ConnectHandler
+    from scripts import get_script
+
+    logger.info(f"Task {self.request.id}: Executing script {script_id} on device {device_id}")
+
+    try:
+        script = get_script(script_id)
+        if not script:
+            return {
+                'device_id': device_id,
+                'device_name': device_params.get('host', 'unknown'),
+                'success': False,
+                'error': 'Скрипт не найден'
+            }
+
+        connection = ConnectHandler(**device_params)
+
+        # Pre-check
+        pre_ok, pre_msg = script.pre_check(connection, {'id': device_id, 'name': device_params.get('host')})
+        if not pre_ok:
+            connection.disconnect()
+            return {
+                'device_id': device_id,
+                'device_name': device_params.get('host', 'unknown'),
+                'success': False,
+                'error': f"Pre-check failed: {pre_msg}"
+            }
+
+        # Execute
+        output = script.execute(connection, {'id': device_id, 'name': device_params.get('host')})
+
+        # Post-check
+        post_ok, post_msg = script.post_check(connection, {'id': device_id, 'name': device_params.get('host')})
+
+        connection.disconnect()
+
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': True,
+            'output': output,
+            'post_check': {'success': post_ok, 'message': post_msg} if not post_ok else None
+        }
+
+    except Exception as e:
+        logger.error(f"Task {self.request.id}: Failed on device {device_id} - {e}")
+        return {
+            'device_id': device_id,
+            'device_name': device_params.get('host', 'unknown'),
+            'success': False,
+            'error': str(e)
+        }
+
+
+def execute_group_script_parallel(device_ids: list, script_id: str, username: str, devices_info: list):
+    """
+    Параллельное выполнение скрипта на группе устройств
+    """
+    tasks = [
+        execute_device_script_task.s(device_id, script_id, username, device_params)
+        for device_id, device_params in zip(device_ids, devices_info)
+    ]
+
+    callback = notify_completion.s(f"SCRIPT: {script_id}", username)
+    result = chord(tasks)(callback)
+
+    return result.id

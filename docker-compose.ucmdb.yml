@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5-enterprise
+    container_name: kontrollka_neo4j
+    restart: always
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-changeme}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+    volumes:
+      - neo4j_data:/data
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    networks:
+      - kontrollka_network
+    #healthcheck:
+      #test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-changeme}", "RETURN 1"]
+      #interval: 10s
+      #timeout: 5s
+      #retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: kontrollka_clickhouse
+    restart: always
+    environment:
+      CLICKHOUSE_DB: kontrollka_metrics
+      CLICKHOUSE_USER: kontrollka
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    networks:
+      - kontrollka_network
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  daria-api:
+    build: ./daria
+    container_name: kontrollka_daria
+    restart: always
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme}
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=kontrollka
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-changeme}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=kontrollka
+      - POSTGRES_USER=kontrollka
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - DEVICE_USERNAME=${DEVICE_USERNAME:-admin}
+      - DEVICE_PASSWORD=${DEVICE_PASSWORD:-admin}
+      - TFTP_SERVER=${TFTP_SERVER}
+      - TFTP_DIR=${TFTP_DIR}
+      # SNMP (поддерживаются оба режима)
+      - SNMP_VERSION=${SNMP_VERSION}
+      - SNMP_COMMUNITY=${SNMP_COMMUNITY}
+      - SNMP_V3_USER=${SNMP_V3_USER}
+      - SNMP_V3_AUTH_PROTOCOL=${SNMP_V3_AUTH_PROTOCOL}
+      - SNMP_V3_AUTH_PASSWORD=${SNMP_V3_AUTH_PASSWORD}
+      - SNMP_V3_PRIV_PROTOCOL=${SNMP_V3_PRIV_PROTOCOL}
+      - SNMP_V3_PRIV_PASSWORD=${SNMP_V3_PRIV_PASSWORD}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      neo4j:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - kontrollka_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: gunicorn -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --certfile=/certs/cert.pem --keyfile=/certs/key.pem app.main:app
+# ⚙️ МАСШТАБИРОВАНИЕ DARIA API:
+# - 1 воркер = минимальная нагрузка (тест)
+# - 4 воркера = 2 ядра CPU (рекомендуется)
+# - 6 воркеров = 4 ядра CPU
+# - 8 воркеров = 8+ ядер CPU
+# Формула: workers = (2 × количество ядер) или чуть больше для пиков
+
+
+  tftp:
+    image: pghalliday/tftp:latest
+    container_name: kontrollka_tftp
+    restart: always
+    volumes:
+      - tftp_data:/var/tftpboot
+    ports:
+      - "69:69/udp"
+    networks:
+      - kontrollka_network
+    healthcheck:
+      test: [ "CMD", "pgrep", "tftpd" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  neo4j_data:
+  clickhouse_data:
+  tftp_data:
+
+networks:
+  kontrollka_network:
+    external: true

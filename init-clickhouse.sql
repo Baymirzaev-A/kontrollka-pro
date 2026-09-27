@@ -1,0 +1,37 @@
+CREATE DATABASE IF NOT EXISTS kontrollka_metrics;
+
+-- Таблица для снапшотов устройств
+CREATE TABLE IF NOT EXISTS kontrollka_metrics.device_snapshots (
+    ip String,
+    name String,
+    device_type String,
+    vendor String,
+    firmware String,
+    serial String,
+    location String,
+    contact String,
+    sysname String,
+    config String,
+    interfaces_count UInt32,
+    last_collected DateTime
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(last_collected)      -- ← партиции по месяцам
+ORDER BY (ip, last_collected);             -- ← порядок сортировки (сначала ip, потом время)
+
+-- Таблица для истории интерфейсов (с добавленными колонками для ошибок)
+CREATE TABLE IF NOT EXISTS kontrollka_metrics.interface_history (
+    device_ip String,
+    interface_name String,
+    interface_index UInt32,
+    interface_type String,
+    speed UInt64,
+    admin_status String,
+    oper_status String,
+    in_errors UInt32 DEFAULT 0,
+    out_errors UInt32 DEFAULT 0,
+    in_discards UInt32 DEFAULT 0,
+    out_discards UInt32 DEFAULT 0,
+    collected_at DateTime
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(collected_at)        -- ← партиции по месяцам
+ORDER BY (device_ip, collected_at);

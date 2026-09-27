@@ -203,9 +203,6 @@
         async function executeGroupCommand() {
             const command = document.getElementById('groupCommand').value.trim();
 
-            console.log('selectedDevices:', selectedDevices);
-            console.log('selectedDevices types:', selectedDevices.map(id => typeof id));
-
             if (!command) {
                 alert('Введите команду');
                 return;
@@ -216,7 +213,6 @@
                 return;
             }
 
-            // Очищаем вывод
             const groupOutput = document.getElementById('groupOutput');
             if (groupOutput) {
                 groupOutput.innerHTML = '<span style="color: #6a9955;"># Выполнение команды: ' + command + '</span>\n';
@@ -226,192 +222,128 @@
 
             appendToGroupOutput(`🚀 Выполнение команды "${command}" на ${selectedDevices.length} устройствах...`);
 
-            showLoading();
-            document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">🔍 Проверка доступности устройств...</div>';
+            const numericIds = selectedDevices.map(id => parseInt(id));
+            await executeCommandOnDevices(command, numericIds);
+        }
 
-            // Сначала проверяем доступность устройств
-            let onlineDevices = [];
-            let offlineDevices = [];
+    // Новая функция для выполнения команды на устройствах (через Celery)
+    async function executeCommandOnDevices(command, deviceIds) {
+        // Запускаем Celery задачу через API
+        appendToGroupOutput(`🚀 Запуск параллельного выполнения на ${deviceIds.length} устройствах...`);
 
+        const response = await fetch('/api/group/execute', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                command: command,
+                device_ids: deviceIds
+            })
+        });
+
+        if (response.status === 429) {
+            const data = await response.json();
+            alert('⚠️ ' + data.message);
+            return;
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            appendToGroupOutput(`❌ Ошибка: ${data.error}`, true);
+            return;
+        }
+
+        const taskId = data.task_id;
+        appendToGroupOutput(`📋 ID задачи: ${taskId}`);
+        appendToGroupOutput(`🔄 Ожидание выполнения на ${data.devices_count} устройствах...`);
+
+        // Показываем прогресс
+        showProgress(0, deviceIds.length, { currentBatch: 1, totalBatches: 1 });
+
+        // Интервал опроса статуса
+        const interval = setInterval(async () => {
             try {
-                appendToGroupOutput(`🔍 Проверка доступности устройств...`);
-
-                const statusResponse = await fetch('/api/devices/check-status', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ device_ids: selectedDevices.map(id => parseInt(id)) })
-                });
-
+                const statusResponse = await fetch(`/api/task/${taskId}/status`);
                 const statusData = await statusResponse.json();
 
-                if (statusData.success) {
-                    // Разделяем устройства на онлайн и оффлайн
-                    for (const [id, info] of Object.entries(statusData.statuses)) {
-                        if (info.online) {
-                            onlineDevices.push(parseInt(id));
-                        } else {
-                            offlineDevices.push({
-                                id: parseInt(id),
-                                name: info.name,
-                                host: info.host
-                            });
-                        }
-                    }
-
-                    // Если есть оффлайн устройства, спрашиваем пользователя
-                    if (offlineDevices.length > 0) {
-                        const offlineList = offlineDevices.map(d => `  • ${d.name} (${d.host})`).join('\n');
-                        const confirmMsg = `⚠️ Следующие устройства НЕДОСТУПНЫ:\n${offlineList}\n\nПродолжить выполнение только на доступных (${onlineDevices.length} из ${selectedDevices.length})?`;
-
-                        if (!confirm(confirmMsg)) {
-                            hideLoading();
-                            appendToGroupOutput(`❌ Выполнение отменено пользователем`, true);
-                            return;
-                        }
-                        appendToGroupOutput(`⚠️ Пропущено недоступных устройств: ${offlineDevices.length}`);
-                    }
-
-                    if (onlineDevices.length === 0) {
-                        hideLoading();
-                        appendToGroupOutput(`❌ Нет доступных устройств для выполнения команды`, true);
-                        alert('❌ Нет доступных устройств для выполнения команды');
-                        return;
-                    }
-
-                    appendToGroupOutput(`📡 Доступно устройств: ${onlineDevices.length} из ${selectedDevices.length}`);
-
-                    // Выполняем команду только на доступных устройствах
-                    await executeCommandOnDevices(command, onlineDevices);
-
-                } else {
-                    hideLoading();
-                    appendToGroupOutput(`❌ Ошибка проверки статуса: ${statusData.error}`, true);
-                    alert('❌ Ошибка проверки статуса: ' + statusData.error);
-                }
-
-            } catch (error) {
-                hideLoading();
-                appendToGroupOutput(`❌ Ошибка проверки статуса: ${error}`, true);
-                alert('❌ Ошибка проверки статуса: ' + error);
-            }
-        }
-
-    // Новая функция для выполнения команды на устройствах
-    async function executeCommandOnDevices(command, deviceIds) {
-        const BATCH_SIZE = 20;
-        const MAX_DEVICES_PER_REQUEST = 40;
-
-        // Проверка лимита
-        if (deviceIds.length > MAX_DEVICES_PER_REQUEST) {
-            const confirmMsg = `⚠️ Вы выбрали ${deviceIds.length} устройств.\n` +
-                               `Максимум за один раз можно выполнить команду на ${MAX_DEVICES_PER_REQUEST} устройствах.\n\n` +
-                               `Будет выполнено на первых ${MAX_DEVICES_PER_REQUEST} устройствах. Продолжить?`;
-
-            if (!confirm(confirmMsg)) {
-                appendToGroupOutput(`❌ Выполнение отменено (превышен лимит)`, true);
-                return;
-            }
-
-            deviceIds = deviceIds.slice(0, MAX_DEVICES_PER_REQUEST);
-            appendToGroupOutput(`⚠️ Выполняется на первых ${deviceIds.length} устройствах`);
-        }
-
-        // Разбиваем на пакеты
-        const batches = [];
-        for (let i = 0; i < deviceIds.length; i += BATCH_SIZE) {
-            batches.push(deviceIds.slice(i, i + BATCH_SIZE));
-        }
-
-        const totalBatches = batches.length;
-        let allResults = [];
-        let processedDevices = 0;
-
-        window.tempResults = [];
-        document.getElementById('resultsContainer').innerHTML = '<div style="text-align: center; padding: 2rem;">⏳ Выполняется команда на устройствах...</div>';
-        document.getElementById('downloadTopContainer').style.display = 'none';
-
-        showProgress(0, deviceIds.length, { currentBatch: 0, totalBatches: totalBatches });
-
-        try {
-            for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-                const batch = batches[batchIndex];
-                const batchNumber = batchIndex + 1;
-
-                appendToGroupOutput(`📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств)...`);
-
-                const progressText = document.getElementById('progressText');
-                if (progressText) {
-                    progressText.innerHTML = `📦 Пакет ${batchNumber} из ${totalBatches} (${batch.length} устройств) - выполняется...`;
-                }
-
-                const response = await fetch('/api/group/execute', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        command: command,
-                        device_ids: batch
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.error && data.limit) {
-                    appendToGroupOutput(`❌ ${data.error}`, true);
-                    alert(`❌ ${data.error}`);
+                if (statusData.status === 'completed') {
+                    clearInterval(interval);
                     hideProgress();
                     hideLoading();
-                    return;
+
+                    const result = statusData.result;
+                    appendToGroupOutput(`✅ Выполнение завершено. Успешно: ${result.success}, Ошибок: ${result.failed}`);
+                    displayResults(result.results, command);
+
+                } else if (statusData.status === 'failed') {
+                    clearInterval(interval);
+                    hideProgress();
+                    hideLoading();
+                    appendToGroupOutput(`❌ Выполнение не удалось: ${statusData.error}`, true);
                 }
-
-                if (data.results) {
-                    allResults = allResults.concat(data.results);
-                    window.tempResults = allResults;
-
-                    const successCount = allResults.filter(r => r.success).length;
-                    const errorCount = allResults.filter(r => !r.success).length;
-                    const statsText = document.getElementById('progressStats');
-                    if (statsText) {
-                        statsText.textContent = `✅ Успешно: ${successCount} | ❌ Ошибок: ${errorCount}`;
-                    }
-                    appendToGroupOutput(`✅ Пакет ${batchNumber} завершён. Успешно: ${successCount}, Ошибок: ${errorCount}`);
-                }
-
-                processedDevices += batch.length;
-                showProgress(processedDevices, deviceIds.length, {
-                    currentBatch: batchNumber,
-                    totalBatches: totalBatches
-                });
-
-                if (batchIndex < batches.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
+            } catch (error) {
+                console.error('Status check error:', error);
             }
+        }, 2000);
+    }
 
-            hideLoading();
-            hideProgress();
+    async function executeScriptOnDevices(scriptId, deviceIds) {
+        appendToGroupOutput(`🚀 Запуск параллельного выполнения скрипта на ${deviceIds.length} устройствах...`);
 
-            if (allResults.length === 0) {
-                document.getElementById('resultsContainer').innerHTML =
-                    '<div class="alert alert-warning">Нет результатов</div>';
-                appendToGroupOutput(`⚠️ Нет результатов выполнения`, true);
-                return;
-            }
+        const response = await fetch('/api/group/execute_script', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                script_id: scriptId,
+                device_ids: deviceIds
+            })
+        });
 
-            appendToGroupOutput(`✅ Выполнение завершено. Всего обработано: ${allResults.length} устройств`);
-            displayResults(allResults, command);
+        const data = await response.json();
 
-        } catch (error) {
-            hideLoading();
-            hideProgress();
-            appendToGroupOutput(`❌ Ошибка соединения: ${error}`, true);
-            document.getElementById('resultsContainer').innerHTML =
-                `<div class="alert alert-danger">Ошибка соединения: ${error}</div>`;
-        } finally {
-            window.tempResults = null;
+        if (!data.success) {
+            appendToGroupOutput(`❌ Ошибка: ${data.error}`, true);
+            return;
         }
+
+        const taskId = data.task_id;
+        appendToGroupOutput(`📋 ID задачи: ${taskId}`);
+
+        showProgress(0, deviceIds.length);
+
+        const interval = setInterval(async () => {
+            try {
+                const statusResponse = await fetch(`/api/task/${taskId}/status`);
+                const statusData = await statusResponse.json();
+
+                if (statusData.status === 'completed') {
+                    clearInterval(interval);
+                    hideProgress();
+                    hideLoading();
+
+                    const data = statusData.result;
+                    const results = data.results || data;
+                    appendToGroupOutput(`✅ Выполнение завершено. Успешно: ${data.success}, Ошибок: ${data.failed}`);
+                    displayResults(results, `Скрипт: ${scriptId}`);
+                } else if (statusData.status === 'failed') {
+                    clearInterval(interval);
+                    hideProgress();
+                    hideLoading();
+                    appendToGroupOutput(`❌ Выполнение не удалось: ${statusData.error}`, true);
+                }
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
+        }, 2000);
     }
 
     function displayResults(results, command) {
+
+        if (!results || !Array.isArray(results)) {
+            appendToGroupOutput('❌ Ошибка: неверный формат результатов', true);
+            return;
+        }
+
         appendToGroupOutput(`📊 Формирование отчета по ${results.length} устройствам...`);
 
         const container = document.getElementById('resultsContainer');
