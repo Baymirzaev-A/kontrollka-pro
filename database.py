@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -29,11 +29,23 @@ class Device(Base):
     port = Column(Integer, default=22)
     description = Column(String, default='')
     purpose = Column(String, default='router')
+    snmp_version = Column(String, default='v2c')
     created_at = Column(DateTime, default=datetime.now)
 
     configs = relationship('Config', back_populates='device', cascade='all, delete-orphan')
     commands = relationship('CommandHistory', back_populates='device', cascade='all, delete-orphan')
 
+    group = Column(String, nullable=True)  # для Ansible
+    site = Column(String, nullable=True)  # площадка (DC1, DC2, Office и т.д.)
+
+    # Индексы
+    __table_args__ = (
+        Index('idx_devices_host', 'host'),
+        Index('idx_devices_device_type', 'device_type'),
+        Index('idx_devices_purpose', 'purpose'),
+        Index('idx_devices_name', 'name'),
+        Index('idx_devices_group', 'group'),
+    )
 
 class Config(Base):
     __tablename__ = 'configs'
@@ -46,6 +58,11 @@ class Config(Base):
 
     device = relationship('Device', back_populates='configs')
 
+    # Индексы
+    __table_args__ = (
+        Index('idx_configs_device_id', 'device_id'),
+        Index('idx_configs_saved_at', 'saved_at'),
+    )
 
 class CommandHistory(Base):
     __tablename__ = 'command_history'
@@ -58,6 +75,14 @@ class CommandHistory(Base):
     executed_by = Column(String, nullable=True)
 
     device = relationship('Device', back_populates='commands')
+
+    # Индексы
+    __table_args__ = (
+        Index('idx_command_history_device_id', 'device_id'),
+        Index('idx_command_history_executed_at', 'executed_at'),
+        Index('idx_command_history_executed_by', 'executed_by'),
+    )
+
 
 class AnsibleHistory(Base):
     __tablename__ = 'ansible_history'
@@ -143,7 +168,7 @@ class DeviceDB:
         finally:
             session.close()
 
-    def add_device(self, name, host, device_type='huawei', port=22, description='', purpose='router'):
+    def add_device(self, name, host, device_type='Huawei VRP', port=22, description='', purpose='Роутер', snmp_version='v2c', group=None, site=None):
         """Добавляет новое устройство"""
         session = SessionLocal()
         try:
@@ -153,7 +178,10 @@ class DeviceDB:
                 device_type=device_type,
                 port=port,
                 description=description,
-                purpose=purpose
+                purpose=purpose,
+                snmp_version=snmp_version,
+                group=group,
+                site=site
             )
             session.add(device)
             session.commit()
@@ -172,7 +200,7 @@ class DeviceDB:
         finally:
             session.close()
 
-    def update_device(self, device_id, name, host, device_type, port, description, purpose):
+    def update_device(self, device_id, name, host, device_type, port, description, purpose, snmp_version='v2c', group=None, site=None):
         """Обновляет данные устройства"""
         session = SessionLocal()
         try:
@@ -184,6 +212,9 @@ class DeviceDB:
                 device.port = port
                 device.description = description
                 device.purpose = purpose
+                device.snmp_version = snmp_version
+                device.group = group
+                device.site = site
                 session.commit()
         finally:
             session.close()
@@ -468,7 +499,10 @@ class DeviceDB:
             'port': device.port,
             'description': device.description,
             'purpose': device.purpose,
-            'created_at': device.created_at.isoformat() if device.created_at else None
+            'snmp_version': device.snmp_version,
+            'created_at': device.created_at.isoformat() if device.created_at else None,
+            'group': device.group,
+            'site': device.site
         }
 
     def _config_to_dict(self, config):

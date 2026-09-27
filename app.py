@@ -9,6 +9,7 @@ import io
 import re
 import json
 import os
+import redis
 from functools import wraps
 from datetime import datetime
 from database import DeviceDB
@@ -22,6 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from models.user import UserModel
 from auth import authenticate, AUTH_MODE
+from celery_app import execute_group_command_parallel, execute_group_script_parallel
 
 print("=== DEBUG ===")
 print(f"AUTH_MODE = {os.environ.get('AUTH_MODE')}")
@@ -34,49 +36,6 @@ app = Flask(__name__)
 
 from ansible_routes import ansible_bp
 app.register_blueprint(ansible_bp)
-
-
-# ===== КЕШ СТАТУСОВ =====
-status_cache = {
-    'data': {},
-    'last_check': 0,
-    'ttl': 20  # проверка раз в 20 секунд
-}
-
-
-def get_cached_statuses(force=False):
-    """Получает статусы устройств из кеша"""
-    global status_cache
-    now = time.time()
-
-    if force or (now - status_cache['last_check']) >= status_cache['ttl']:
-        devices = get_cached_devices()
-        if devices:
-            status_cache['data'] = check_devices_status(devices)
-            status_cache['last_check'] = now
-            online = sum(1 for s in status_cache['data'].values() if s)
-        else:
-            status_cache['data'] = {}
-
-    return status_cache['data']
-
-
-# ===== ФОНОВАЯ ПРОВЕРКА СТАТУСОВ =====
-def background_status_check():
-    """Фоновая проверка статусов устройств (раз в минуту)"""
-    while True:
-        time.sleep(status_cache['ttl'])  # используем TTL из кеша
-        try:
-            # Принудительно обновляем кеш
-            get_cached_statuses(force=True)
-            # Отправляем статусы всем подключенным клиентам
-            socketio.emit('status_update', status_cache['data'])
-        except Exception as e:
-            logger.error(f"Ошибка в фоновой проверке статусов: {e}")
-
-# Запускаем фоновый поток
-status_thread = threading.Thread(target=background_status_check, daemon=True)
-status_thread.start()
 
 # ===== БЕЗОПАСНЫЙ SECRET_KEY =====
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -265,6 +224,68 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ===== КЕШ СТАТУСОВ В REDIS =====
+# Подключение к Redis (один раз при старте)
+redis_client = redis.Redis(
+    host='redis',
+    port=6379,
+    decode_responses=True
+)
+
+from flask_limiter import Limiter
+#from flask_limiter.util import get_remote_address
+
+# Rate Limiter с хранением в Redis
+limiter = Limiter(
+    app,          # ключ = IP пользователя
+    default_limits=["200 per minute", "10 per second"],
+    storage_uri=os.getenv('REDIS_URL', 'redis://redis:6379')
+)
+
+# Проверяем подключение к Redis
+try:
+    redis_client.ping()
+    logger.info("✅ Redis подключен для кеширования статусов")
+except Exception as e:
+    logger.error(f"❌ Ошибка подключения к Redis: {e}")
+
+def get_cached_statuses(force=False):
+    """Получает статусы устройств из Redis кеша"""
+    cache_key = "device_statuses"
+
+    # Если не принудительное обновление - пробуем взять из кеша
+    if not force:
+        cached = redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+    # Обновляем кеш - проверяем все устройства
+    devices = get_cached_devices()
+    if devices:
+        statuses = check_devices_status(devices)
+        # Сохраняем в Redis на 20 секунд
+        redis_client.setex(cache_key, 20, json.dumps(statuses))
+        return statuses
+
+    return {}
+
+# ===== ФОНОВАЯ ПРОВЕРКА СТАТУСОВ =====
+def background_status_check():
+    """Фоновая проверка статусов устройств (раз в 20 секунд)"""
+    while True:
+        time.sleep(20)
+        try:
+            # Принудительно обновляем кеш в Redis
+            statuses = get_cached_statuses(force=True)
+            # Отправляем статусы всем подключенным клиентам
+            socketio.emit('status_update', statuses)
+        except Exception as e:
+            logger.error(f"Ошибка в фоновой проверке статусов: {e}")
+
+# Запускаем фоновый поток
+status_thread = threading.Thread(target=background_status_check, daemon=True)
+status_thread.start()
+
 from flask_socketio import SocketIO, emit
 
 # Настройка SocketIO с поддержкой Redis (если указан)
@@ -274,7 +295,8 @@ if redis_url:
         app,
         cors_allowed_origins="*",
         manage_session=False,
-        message_queue=redis_url
+        message_queue=redis_url,
+        async_mode='eventlet'
     )
     logger.info(f"✅ SocketIO настроен с Redis: {redis_url}")
 else:
@@ -289,9 +311,78 @@ else:
 def handle_connect():
     print(f"Client connected")
 
+
+# ===== WEBSOCKET ПОДПИСКИ ДЛЯ SNMP ОБНОВЛЕНИЙ =====
+from collections import defaultdict
+import redis
+
+device_subscribers = defaultdict(list)
+
+
+@socketio.on('connect')
+def handle_connect():
+    print(f"Client connected")
+
+
 @socketio.on('disconnect')
 def handle_disconnect():
     print(f"Client disconnected")
+    # Очищаем подписки при отключении
+    for device_id, subscribers in list(device_subscribers.items()):
+        if request.sid in subscribers:
+            subscribers.remove(request.sid)
+
+
+@socketio.on('subscribe_device')
+def handle_subscribe_device(data):
+    device_id = data.get('device_id')
+    if device_id and request.sid:
+        if device_id not in device_subscribers:
+            device_subscribers[device_id] = []
+        if request.sid not in device_subscribers[device_id]:
+            device_subscribers[device_id].append(request.sid)
+            logger.info(f"Client {request.sid} subscribed to device {device_id}")
+
+
+@socketio.on('unsubscribe_device')
+def handle_unsubscribe_device(data):
+    device_id = data.get('device_id')
+    if device_id and request.sid in device_subscribers.get(device_id, []):
+        device_subscribers[device_id].remove(request.sid)
+        logger.info(f"Client {request.sid} unsubscribed from device {device_id}")
+
+
+def start_redis_listener():
+    try:
+        r = redis.Redis(host='redis', port=6379, decode_responses=True)
+        pubsub = r.pubsub()
+        pubsub.subscribe('daria:device:updated')
+
+        batch = []
+        last_batch_time = time.time()
+
+        for message in pubsub.listen():
+            if message['type'] == 'message':
+                try:
+                    data = json.loads(message['data'])
+                    batch.append(data)
+
+                    now = time.time()
+                    if len(batch) >= 10 or (now - last_batch_time) > 1:
+                        for update in batch:
+                            device_id = update.get('device_id')
+                            for sid in device_subscribers.get(device_id, []):
+                                socketio.emit('snmp_updated', update, room=sid)
+                        batch = []
+                        last_batch_time = now
+                except Exception as e:
+                    logger.error(f"Error processing Redis message: {e}")
+    except Exception as e:
+        logger.error(f"Redis listener error: {e}")
+
+
+# Запускаем Redis listener в отдельном потоке
+threading.Thread(target=start_redis_listener, daemon=True).start()
 
 db = DeviceDB()
 
@@ -360,6 +451,7 @@ def get_device_params(device):
         'timeout': 30,
         'session_timeout': 60,
         'global_delay_factor': 2,
+        'disabled_algorithms': {},
     }
 
     # SSH-ключ для серверов (если задан)
@@ -564,24 +656,24 @@ def group_console():
     return render_template('group.html', devices=devices)
 
 
-@app.route('/configs')
-@login_required
-def configs_page():
-    """Страница со всеми сохраненными конфигурациями"""
-    configs = db.get_all_configs(100)
-    return render_template('configs.html', configs=configs)
+#@app.route('/configs')
+#@login_required
+#def configs_page():
+    #"""Страница со всеми сохраненными конфигурациями"""
+    #configs = db.get_all_configs(100)
+    #return render_template('configs.html', configs=configs)
 
 
-@app.route('/config/<int:config_id>')
-@login_required
-def view_config(config_id):
-    """Страница просмотра конфигурации"""
-    config = db.get_config(config_id)
-    if not config:
-        return redirect(url_for('configs_page'))
+#@app.route('/config/<int:config_id>')
+#@login_required
+#def view_config(config_id):
+#    """Страница просмотра конфигурации"""
+#    config = db.get_config(config_id)
+#    if not config:
+#        return redirect(url_for('configs_page'))
 
-    device = db.get_device(config['device_id'])
-    return render_template('view_config.html', config=config, device=device)
+#    device = db.get_device(config['device_id'])
+#    return render_template('view_config.html', config=config, device=device)
 
 
 # ==== API ДЛЯ ПРОВЕРКИ СТАТУСА УСТРОЙСТВ ====
@@ -711,7 +803,9 @@ def add_device():
             device_type=data.get('device_type', 'huawei'),
             port=int(data.get('port', 22)),
             description=data.get('description', ''),
-            purpose=data.get('purpose', 'router')
+            purpose=data.get('purpose', 'router'),
+            group=data.get('group'),
+            site=data.get('site')
         )
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
         socketio.emit('devices_updated', {
@@ -805,11 +899,6 @@ def execute_command(device_id):
         username = session.get('username', 'unknown')
         db.save_command_history(device_id, command, output, username)
 
-        # Сохраняем конфиг если нужно
-        if 'display current-configuration' in command or command.strip() in ['display cur', 'disp cur',
-                                                                             'display current']:
-            db.save_config(device_id, output)
-
         return jsonify({
             'success': True,
             'output': output,
@@ -832,91 +921,63 @@ def execute_command(device_id):
 
 @app.route('/api/group/execute', methods=['POST'])
 @login_required
+@limiter.limit("5 per minute")
 def execute_group_command():
-    """Выполнение команды на нескольких выбранных устройствах"""
     data = request.json
     command = data.get('command')
     device_ids = data.get('device_ids', [])
 
     if not command:
         return jsonify({'error': 'Команда не указана'}), 400
-        # ===== ПРОВЕРКА НА ОПАСНЫЕ КОМАНДЫ =====
+
     if is_dangerous_command(command):
         return jsonify({
-            'error': '❌ Эта команда запрещена в консоли. Используйте скрипты для изменения конфигурации.',
+            'error': '❌ Эта команда запрещена в консоли',
             'command': command
         }), 403
+
     if not device_ids:
         return jsonify({'error': 'Не выбрано ни одного устройства'}), 400
 
-    # ===== ПРОВЕРКА ЛИМИТА =====
     if len(device_ids) > MAX_DEVICES_PER_GROUP:
         return jsonify({
-            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP} за раз. Выбрано: {len(device_ids)}',
+            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP}',
             'limit': MAX_DEVICES_PER_GROUP,
             'selected': len(device_ids)
         }), 400
 
-    results = []
-    total = len(device_ids)
+    # Собираем параметры подключения
+    valid_device_ids = []
+    devices_info = []
 
-    for idx, device_id in enumerate(device_ids):
+    for device_id in device_ids:
         device = db.get_device(device_id)
-        if not device:
-            results.append({
-                'device_id': device_id,
-                'device_name': 'Неизвестно',
-                'success': False,
-                'error': 'Устройство не найдено'
-            })
-            continue
+        if device:
+            params = get_device_params(device)
+            params['disabled_algorithms'] = {}  # Для старых устройств
+            valid_device_ids.append(device_id)
+            devices_info.append(params)
 
-        device_params = get_device_params(device)
+    if not valid_device_ids:
+        return jsonify({'error': 'Нет доступных устройств'}), 400
 
-        connection = None
-        try:
-            logger.info(f"Групповая задача [{idx + 1}/{total}]: подключение к {device['host']}")
-            connection = ConnectHandler(**device_params)
-            output = execute_long_command(connection, command)
+    username = session.get('username', 'unknown')
 
-            username = session.get('username', 'unknown')
-            db.save_command_history(device_id, command, output, username)
+    # Вызываем НОВУЮ функцию с правильными параметрами
+    task_id = execute_group_command_parallel(
+        valid_device_ids,
+        command,
+        username,
+        devices_info
+    )
 
-            if 'display current-configuration' in command or command.strip() in ['display cur', 'disp cur',
-                                                                                 'display current']:
-                db.save_config(device_id, output)
-
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': True,
-                'output': output
-            })
-
-        except Exception as e:
-            logger.error(f"Ошибка для устройства {device['name']}: {str(e)}")
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': False,
-                'error': str(e)
-            })
-        finally:
-            if connection:
-                connection.disconnect()
-
-        # Небольшая задержка между подключениями
-        if idx < total - 1:
-            time.sleep(0.1)
+    logger.info(f"Group command task created: {task_id}, devices: {len(valid_device_ids)}")
 
     return jsonify({
         'success': True,
-        'results': results,
-        'summary': {
-            'total': total,
-            'success': len([r for r in results if r['success']]),
-            'failed': len([r for r in results if not r['success']])
-        }
+        'task_id': task_id,
+        'message': f'Запущено параллельное выполнение на {len(valid_device_ids)} устройствах',
+        'devices_count': len(valid_device_ids)
     })
 
 # ==== API ДЛЯ СКРИПТОВ =====
@@ -953,6 +1014,7 @@ def execute_script(device_id):
 
     # Подключаемся
     device_params = get_device_params(device)
+    device_params['disabled_algorithms'] = {}
 
     connection = None
     try:
@@ -996,7 +1058,7 @@ def execute_script(device_id):
 @app.route('/api/group/execute_script', methods=['POST'])
 @login_required
 def execute_group_script():
-    """Выполняет скрипт на нескольких выбранных устройствах"""
+    """Выполняет скрипт на нескольких выбранных устройствах через Celery"""
     data = request.json
     script_id = data.get('script_id')
     device_ids = data.get('device_ids', [])
@@ -1011,67 +1073,45 @@ def execute_group_script():
     if not script:
         return jsonify({'error': 'Скрипт не найден'}), 404
 
-    results = []
+    if len(device_ids) > MAX_DEVICES_PER_GROUP:
+        return jsonify({
+            'error': f'Слишком много устройств. Максимум {MAX_DEVICES_PER_GROUP}',
+            'limit': MAX_DEVICES_PER_GROUP,
+            'selected': len(device_ids)
+        }), 400
+
+    # Собираем параметры подключения
+    valid_device_ids = []
+    devices_info = []
 
     for device_id in device_ids:
         device = db.get_device(device_id)
-        if not device:
-            results.append({
-                'device_id': device_id,
-                'device_name': 'Неизвестно',
-                'success': False,
-                'error': 'Устройство не найдено'
-            })
-            continue
+        if device:
+            params = get_device_params(device)
+            params['disabled_algorithms'] = {}
+            valid_device_ids.append(device_id)
+            devices_info.append(params)
 
-        device_params = get_device_params(device)
+    if not valid_device_ids:
+        return jsonify({'error': 'Нет доступных устройств'}), 400
 
-        connection = None
-        try:
-            connection = ConnectHandler(**device_params)
+    username = session.get('username', 'unknown')
 
-            # Pre-check
-            pre_ok, pre_msg = script.pre_check(connection, device)
-            if not pre_ok:
-                results.append({
-                    'device_id': device_id,
-                    'device_name': device['name'],
-                    'success': False,
-                    'error': f"Pre-check failed: {pre_msg}"
-                })
-                continue
+    task_id = execute_group_script_parallel(
+        valid_device_ids,
+        script_id,
+        username,
+        devices_info
+    )
 
-            # Execute
-            output = script.execute(connection, device)
+    logger.info(f"Group script task created: {task_id}, devices: {len(valid_device_ids)}")
 
-            # Post-check
-            post_ok, post_msg = script.post_check(connection, device)
-
-            # Сохраняем в историю
-            username = session.get('username', 'unknown')
-            db.save_command_history(device_id, f"SCRIPT: {script.get_name()}", output, username)
-
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': True,
-                'output': output,
-                'post_check': {'success': post_ok, 'message': post_msg} if not post_ok else None
-            })
-
-        except Exception as e:
-            logger.error(f"Ошибка для устройства {device['name']}: {str(e)}")
-            results.append({
-                'device_id': device_id,
-                'device_name': device['name'],
-                'success': False,
-                'error': str(e)
-            })
-        finally:
-            if connection:
-                connection.disconnect()
-
-    return jsonify({'success': True, 'results': results})
+    return jsonify({
+        'success': True,
+        'task_id': task_id,
+        'message': f'Запущено выполнение скрипта на {len(valid_device_ids)} устройствах',
+        'devices_count': len(valid_device_ids)
+    })
 
 
 @app.route('/api/device/<int:device_id>/save_config', methods=['POST'])
@@ -1091,6 +1131,7 @@ def save_config(device_id):
         'timeout': 30,
         'session_timeout': 60,
         'global_delay_factor': 2,
+        'disabled_algorithms': {},
     }
 
     if DEVICE_ENABLE:
@@ -1452,9 +1493,12 @@ def update_device(device_id):
     port = int(request.form.get('port', 22))
     description = request.form.get('description', '')
     purpose = request.form.get('purpose', 'router')
+    snmp_version = request.form.get('snmp_version', 'v2c')
+    group = request.form.get('group')
+    site = request.form.get('site')
 
     try:
-        db.update_device(device_id, name, host, device_type, port, description, purpose)
+        db.update_device(device_id, name, host, device_type, port, description, purpose, snmp_version=snmp_version, group=group, site=site)
         invalidate_devices_cache()  # ← СБРАСЫВАЕМ КЕШ
         logger.info(f"✏️ Устройство обновлено: {name} (ID: {device_id})")
         return redirect(url_for('index'))
@@ -1751,6 +1795,66 @@ def api_audit_commands():
     per_page = request.args.get('per_page', 50, type=int)
     history = db.get_command_history_all(page, per_page)
     return jsonify(history)
+
+
+@app.route('/api/device/<int:device_id>/rediscover', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def api_rediscover_device(device_id):
+    """Принудительный сбор данных по устройству"""
+    import requests
+
+    try:
+        response = requests.post(
+            f'https://daria-api:8000/api/discovery/collect/{device_id}',
+            timeout=5,
+            verify = False
+        )
+        return jsonify({'success': True, 'message': 'Сбор данных запущен'})
+    except requests.exceptions.RequestException as e:
+        logger.error(f"DARIA API error: {e}")
+        return jsonify({'success': False, 'error': 'DARIA service unavailable'}), 503
+
+
+@app.route('/api/devices/rediscover-all', methods=['POST'])
+@login_required
+def api_rediscover_all_devices():
+    """Принудительный сбор по всем устройствам"""
+    from celery_app import collect_all_devices_task
+
+    task = collect_all_devices_task.delay()
+    return jsonify({'success': True, 'task_id': task.id, 'message': 'Сбор данных запущен в очередь'})
+
+@app.context_processor
+def inject_daria_url():
+    return {
+        'daria_api_url': os.getenv('DARIA_API_URL', 'http://daria-api:8000')
+    }
+
+
+@app.route('/api/task/<task_id>/status', methods=['GET'])
+@login_required
+def task_status(task_id):
+    from celery_app import app as celery_app
+    task = celery_app.AsyncResult(task_id)
+
+    if task.ready():
+        if task.successful():
+            result = task.result
+            return jsonify({
+                'status': 'completed',
+                'result': result
+            })
+        else:
+            return jsonify({
+                'status': 'failed',
+                'error': str(task.info)
+            })
+    else:
+        return jsonify({
+            'status': 'pending',
+            'task_id': task_id
+        })
 
 if __name__ == '__main__':
     cert_file = os.environ.get('SSL_CERT', 'certs/cert.pem')
